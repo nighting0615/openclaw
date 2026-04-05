@@ -43,6 +43,7 @@ export function buildMediaLocalRoots(
       path.join(resolvedStateDir, "canvas"),
       path.join(resolvedStateDir, "workspace"),
       path.join(resolvedStateDir, "sandboxes"),
+      path.join(resolvedStateDir, "artifacts"),
     ]),
   );
 }

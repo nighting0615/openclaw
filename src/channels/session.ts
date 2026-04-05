@@ -14,6 +14,11 @@ function loadInboundSessionRuntime() {
   return inboundSessionRuntimePromise;
 }
 
+function resolveInboundMetaSessionKey(sessionKey: string, ctx: MsgContext): string {
+  const nativeTargetSessionKey =
+    ctx.CommandSource === "native" ? ctx.CommandTargetSessionKey?.trim() : undefined;
+  return normalizeSessionKeyPreservingOpaquePeerIds(nativeTargetSessionKey || sessionKey);
+}
 function shouldSkipPinnedMainDmRouteUpdate(
   pin: InboundLastRouteUpdate["mainDmOwnerPin"] | undefined,
 ): boolean {
@@ -40,12 +45,12 @@ export async function recordInboundSession(params: {
   trackSessionMetaTask?: (task: Promise<unknown>) => void;
 }): Promise<void> {
   const { storePath, sessionKey, ctx, groupResolution, createIfMissing } = params;
-  const canonicalSessionKey = normalizeSessionKeyPreservingOpaquePeerIds(sessionKey);
+  const metaSessionKey = resolveInboundMetaSessionKey(sessionKey, ctx);
   const runtime = await loadInboundSessionRuntime();
   const metaTask = runtime
     .recordSessionMetaFromInbound({
       storePath,
-      sessionKey: canonicalSessionKey,
+      sessionKey: metaSessionKey,
       ctx,
       groupResolution,
       createIfMissing,
@@ -72,7 +77,7 @@ export async function recordInboundSession(params: {
       threadId: update.threadId,
     },
     // Avoid leaking inbound origin metadata into a different target session.
-    ctx: targetSessionKey === canonicalSessionKey ? ctx : undefined,
+    ctx: targetSessionKey === metaSessionKey ? ctx : undefined,
     groupResolution,
     createIfMissing,
   });
