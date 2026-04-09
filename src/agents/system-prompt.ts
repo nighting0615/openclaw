@@ -605,6 +605,20 @@ function buildDocsSection(params: {
   return lines.filter((line): line is string => line !== undefined);
 }
 
+function buildMainEntryRoutingGuard(workspaceDir: string) {
+  const normalized = workspaceDir.replaceAll("\\", "/").toLowerCase();
+  if (!normalized.endsWith("/workspaces/main")) {
+    return [];
+  }
+  return [
+    "## Main Entry Routing Guard",
+    "For the main entry, treat summary/query/content-understanding/image-or-video-generation/file-export-or-send-to-me requests as result-first requests.",
+    "If the user did NOT clearly ask to remember it as a task, set a reminder, track/follow up, or handle it later, you MUST NOT route those requests into task progression.",
+    "Do not create, queue, update, or silently convert them into Obsidian/family/shared todo flows by default; return or deliver the requested result directly.",
+    "",
+  ];
+}
+
 function formatFullAccessBlockedReason(reason?: EmbeddedFullAccessBlockedReason): string {
   if (reason === "host-policy") {
     return "host policy";
@@ -935,7 +949,13 @@ export function buildAgentSystemPrompt(params: {
     isMinimal,
     readToolName,
   });
-  const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
+  const mainEntryRoutingGuard = buildMainEntryRoutingGuard(params.workspaceDir);
+  const workspaceNotes = (params.workspaceNotes ?? [])
+    .map((note) => normalizeStructuredPromptSection(note))
+    .filter(Boolean);
+  const modelAliasLines = (params.modelAliasLines ?? [])
+    .map((line) => normalizeStructuredPromptSection(line))
+    .filter(Boolean);
 
   // For "none" mode, return just the basic identity line
   if (promptMode === "none") {
@@ -1096,6 +1116,7 @@ export function buildAgentSystemPrompt(params: {
       "",
       ...skillsSection,
       ...memorySection,
+      ...mainEntryRoutingGuard,
       hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
       hasGateway && !isMinimal
         ? [
