@@ -471,6 +471,29 @@ describe("exec approval forwarder", () => {
     expect(target.to).toBe("U123");
   });
 
+  it("summarizes long exec approval commands for forwarded approver messages", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const { forwarder } = createForwarder({
+      cfg: TARGETS_CFG,
+      deliver,
+    });
+
+    await forwarder.handleRequested({
+      ...baseRequest,
+      request: {
+        ...baseRequest.request,
+        command: "python3 <<'PY'\n" + "print('x')\n".repeat(200) + "PY",
+      },
+    });
+    await flushPendingDelivery();
+
+    const text = getFirstDeliveryText(deliver);
+    expect(text).toContain("🔒 Exec approval required");
+    expect(text).toContain("Command: `python3 <<'PY'");
+    expect(text).not.toContain("print('x')\nprint('x')\nprint('x')\nprint('x')");
+  });
+
   it("skips telegram forwarding when telegram exec approvals handler is enabled", async () => {
     vi.useFakeTimers();
     const cfg = {

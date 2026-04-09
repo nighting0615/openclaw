@@ -249,14 +249,39 @@ export function buildExecApprovalRequestMessage(request: ExecApprovalRequest, no
       lines.push(`- ${line}`);
     }
   }
-  const command = formatApprovalCommand(
-    resolveExecApprovalCommandDisplay(request.request).commandText,
-  );
-  if (command.inline) {
-    lines.push(`Command: ${command.text}`);
-  } else {
-    lines.push("Command:");
-    lines.push(command.text);
+  const commandDisplay = resolveExecApprovalCommandDisplay(request.request);
+  const shouldRenderFullCommand =
+    commandDisplay.commandText.length > 0 &&
+    commandDisplay.commandText.length <= 280 &&
+    commandDisplay.commandText.split(/\r?\n/).length <= 6;
+  if (shouldRenderFullCommand) {
+    const command = formatApprovalCommand(commandDisplay.commandText);
+    if (command.inline) {
+      lines.push(`Command: ${command.text}`);
+    } else {
+      lines.push("Command:");
+      lines.push(command.text);
+    }
+  } else if (commandDisplay.commandSummary?.trim()) {
+    const summary = formatApprovalCommand(commandDisplay.commandSummary.trim());
+    if (summary.inline) {
+      lines.push(`Command: ${summary.text}`);
+    } else {
+      lines.push("Command:");
+      lines.push(summary.text);
+    }
+  }
+  if (
+    commandDisplay.commandPreview &&
+    commandDisplay.commandPreview !== commandDisplay.commandText
+  ) {
+    const preview = formatApprovalCommand(commandDisplay.commandPreview);
+    if (preview.inline) {
+      lines.push(`Preview: ${preview.text}`);
+    } else {
+      lines.push("Preview:");
+      lines.push(preview.text);
+    }
   }
   if (request.request.cwd) {
     lines.push(`CWD: ${request.request.cwd}`);

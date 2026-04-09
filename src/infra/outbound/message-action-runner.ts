@@ -1256,6 +1256,7 @@ export async function runMessageAction(
     action,
     args: params,
     toolContext: input.toolContext,
+    requesterSenderId: input.requesterSenderId,
   });
 
   const channel = await resolveChannel(cfg, params, input.toolContext);

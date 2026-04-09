@@ -14,12 +14,15 @@ export function normalizeMessageActionInput(params: {
   action: ChannelMessageActionName;
   args: Record<string, unknown>;
   toolContext?: ChannelThreadingToolContext;
+  requesterSenderId?: string | null;
 }): Record<string, unknown> {
   const normalizedArgs = { ...params.args };
   const { action, toolContext } = params;
   const explicitChannel = normalizeOptionalString(normalizedArgs.channel) ?? "";
   const inferredChannel =
     explicitChannel || normalizeMessageChannel(toolContext?.currentChannelProvider) || "";
+  const inferredRequesterTarget =
+    typeof params.requesterSenderId === "string" ? params.requesterSenderId.trim() : "";
 
   const explicitTarget = normalizeOptionalString(normalizedArgs.target) ?? "";
   const hasLegacyTargetFields =
@@ -42,6 +45,8 @@ export function normalizeMessageActionInput(params: {
     const inferredTarget = normalizeOptionalString(toolContext?.currentChannelId);
     if (inferredTarget) {
       normalizedArgs.target = inferredTarget;
+    } else if (inferredRequesterTarget) {
+      normalizedArgs.target = inferredRequesterTarget;
     }
   }
 

@@ -22,6 +22,7 @@ const EXEC_APPROVAL_OVERSIZED_MARKER =
 const EXEC_APPROVAL_WARNING_OVERSIZED_MARKER =
   "[exec approval warning exceeds display size limit; full text suppressed]";
 
+const MAX_EXEC_APPROVAL_SUMMARY_CHARS = 280;
 const BYPASS_MASK = "***";
 
 function formatCodePointEscape(char: string): string {
@@ -209,9 +210,25 @@ function normalizePreview(commandText: string, commandPreview?: string | null): 
   return preview;
 }
 
+function truncateSummary(text: string): string {
+  if (text.length <= MAX_EXEC_APPROVAL_SUMMARY_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, MAX_EXEC_APPROVAL_SUMMARY_CHARS - 1).trimEnd()}…`;
+}
+
+export function summarizeExecApprovalDisplayText(commandText: string): string {
+  const singleLine = sanitizeExecApprovalDisplayText(commandText).replace(/\s+/g, " ").trim();
+  if (!singleLine) {
+    return "";
+  }
+  return truncateSummary(singleLine);
+}
+
 export function resolveExecApprovalCommandDisplay(request: ExecApprovalRequestPayload): {
   commandText: string;
   commandPreview: string | null;
+  commandSummary: string | null;
 } {
   const commandTextSource =
     request.command ||
@@ -223,5 +240,9 @@ export function resolveExecApprovalCommandDisplay(request: ExecApprovalRequestPa
   return {
     commandText,
     commandPreview: normalizePreview(commandText, previewSource),
+    commandSummary:
+      summarizeExecApprovalDisplayText(
+        normalizePreview(commandText, previewSource) ?? commandText,
+      ) || null,
   };
 }

@@ -67,6 +67,17 @@ describe("normalizeMessageActionInput", () => {
     {
       input: {
         action: "send",
+        args: {},
+        toolContext: {
+          currentChannelProvider: "telegram",
+        },
+        requesterSenderId: "123456789",
+      },
+      expectedFields: { channel: "telegram", target: "123456789", to: "123456789" },
+    },
+    {
+      input: {
+        action: "send",
         args: {
           target: "channel:C1",
         },

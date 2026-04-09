@@ -3,6 +3,7 @@ import {
   resolveExecApprovalCommandDisplay,
   sanitizeExecApprovalDisplayText,
   sanitizeExecApprovalWarningText,
+  summarizeExecApprovalDisplayText,
 } from "./exec-approval-command-display.js";
 
 describe("sanitizeExecApprovalDisplayText", () => {
@@ -196,6 +197,7 @@ describe("resolveExecApprovalCommandDisplay", () => {
       expected: {
         commandText: "echo hi",
         commandPreview: null,
+        commandSummary: "echo hi",
       },
     },
     {
@@ -215,6 +217,7 @@ describe("resolveExecApprovalCommandDisplay", () => {
       expected: {
         commandText: 'python3 -c "print(1)"',
         commandPreview: "print\\u{200B}(1)",
+        commandSummary: "print\\u{200B}(1)",
       },
     },
     {
@@ -234,9 +237,25 @@ describe("resolveExecApprovalCommandDisplay", () => {
       expected: {
         commandText: "",
         commandPreview: null,
+        commandSummary: null,
       },
     },
   ])("$name", ({ input, expected }) => {
     expect(resolveExecApprovalCommandDisplay(input)).toEqual(expected);
+  });
+});
+
+describe("summarizeExecApprovalDisplayText", () => {
+  it("collapses multiline commands into a single short preview", () => {
+    expect(
+      summarizeExecApprovalDisplayText("python3 <<'PY'\nprint('hello')\nprint('world')\nPY"),
+    ).toBe("python3 <<'PY' print('hello') print('world') PY");
+  });
+
+  it("truncates long approval summaries", () => {
+    const input = `python3 -c "${"x".repeat(400)}"`;
+    const summary = summarizeExecApprovalDisplayText(input);
+    expect(summary.length).toBeLessThanOrEqual(280);
+    expect(summary.endsWith("…")).toBe(true);
   });
 });
