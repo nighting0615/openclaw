@@ -57,6 +57,7 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { evaluateFamilyRawExecPolicy } from "./family-capability-policy.js";
 import { EXEC_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
 import { type AgentToolWithMeta, failedTextResult, textResult } from "./tools/common.js";
 
@@ -1446,6 +1447,16 @@ export function createExecTool(
       } else {
         const rawWorkdir = explicitWorkdir ?? defaultWorkdir ?? process.cwd();
         workdir = resolveWorkdir(rawWorkdir, warnings);
+      }
+      const commandArgv = splitShellArgs(params.command);
+      const familyExecPolicy = await evaluateFamilyRawExecPolicy({
+        agentId,
+        command: params.command,
+        workspaceDir: workdir,
+        argv: commandArgv,
+      });
+      if (!familyExecPolicy.allowed) {
+        throw new Error(familyExecPolicy.reason);
       }
       rejectUnsafeControlShellCommand(params.command);
 

@@ -25,6 +25,7 @@ import type { ProcessToolDefaults } from "./bash-tools.process.js";
 import { execSchema, processSchema } from "./bash-tools.schemas.js";
 import { listChannelAgentTools } from "./channel-tools.js";
 import { shouldSuppressManagedWebSearchTool } from "./codex-native-web-search.js";
+import { evaluateFamilyFileReadPolicy } from "./family-capability-policy.js";
 import { resolveImageSanitizationLimits } from "./image-sanitization.js";
 import type { ModelAuthMode } from "./model-auth.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
@@ -284,6 +285,30 @@ function isApplyPatchAllowedForModel(params: {
     }
     return normalized === normalizedModelId || normalized === normalizedFull;
   });
+}
+
+function wrapReadToolWithFamilyReadPolicy(tool: AnyAgentTool, agentId?: string): AnyAgentTool {
+  if (tool.name !== "read") {
+    return tool;
+  }
+  return {
+    ...tool,
+    execute: async (toolCallId, params, signal) => {
+      const record =
+        params && typeof params === "object" ? (params as Record<string, unknown>) : undefined;
+      const targetPath = typeof record?.path === "string" ? record.path : "";
+      if (targetPath) {
+        const readPolicy = await evaluateFamilyFileReadPolicy({
+          agentId,
+          targetPath,
+        });
+        if (!readPolicy.allowed) {
+          throw new Error(readPolicy.reason);
+        }
+      }
+      return await tool.execute(toolCallId, params, signal);
+    },
+  };
 }
 
 function resolveExecConfig(params: { cfg?: OpenClawConfig; agentId?: string }) {
@@ -1067,7 +1092,11 @@ export function createOpenClawCodingTools(options?: {
     }),
   );
   options?.recordToolPrepStage?.("schema-normalization");
-  const withHooks = normalized.map((tool) =>
+  const withFamilyReadPolicy = normalized.map((tool) =>
+    wrapReadToolWithFamilyReadPolicy(tool, agentId),
+  );
+  options?.recordToolPrepStage?.("family-read-policy");
+  const withHooks = withFamilyReadPolicy.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, {
       agentId,
       ...(options?.config ? { config: options.config } : {}),

@@ -15,7 +15,9 @@ import {
   isExecDeniedResultText,
   parseExecApprovalResultText,
 } from "./exec-approval-result.js";
-import { sanitizeUserFacingText } from "./pi-embedded-helpers/sanitize-user-facing-text.js";
+import { sanitizeExecResultTextForFamilySurface } from "./family-capability-policy.js";
+import { sanitizeUserFacingText } from "./pi-embedded-helpers/errors.js";
+import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { callGatewayTool } from "./tools/gateway.js";
 
 type ExecApprovalFollowupParams = {
@@ -293,6 +295,13 @@ export async function sendExecApprovalFollowup(
       ? normalizedTurnSourceChannel
       : undefined;
 
+  // Apply family capability policy sanitization before forwarding
+  const requesterAgentId = sessionKey ? parseAgentSessionKey(sessionKey)?.agentId : undefined;
+  const sanitizedResultText = await sanitizeExecResultTextForFamilySurface({
+    agentId: requesterAgentId,
+    resultText,
+  });
+
   let sessionError: unknown = null;
 
   if (sessionKey && params.direct !== true) {
@@ -300,7 +309,7 @@ export async function sendExecApprovalFollowup(
       const agentArgs = buildAgentFollowupArgs({
         approvalId: params.approvalId,
         sessionKey,
-        resultText,
+        resultText: sanitizedResultText,
         deliveryTarget,
         sessionOnlyOriginChannel,
         turnSourceChannel: params.turnSourceChannel,
@@ -334,7 +343,7 @@ export async function sendExecApprovalFollowup(
     await sendDirectFollowupFallback({
       approvalId: params.approvalId,
       deliveryTarget,
-      resultText,
+      resultText: sanitizedResultText,
       sessionError,
     })
   ) {

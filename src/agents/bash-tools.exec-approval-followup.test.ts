@@ -8,11 +8,16 @@ vi.mock("../infra/outbound/message.js", () => ({
   sendMessage: vi.fn(async () => ({ ok: true })),
 }));
 
+vi.mock("./family-capability-policy.js", () => ({
+  sanitizeExecResultTextForFamilySurface: vi.fn(async ({ resultText }: { resultText: string }) => resultText),
+}));
+
 import { sendMessage } from "../infra/outbound/message.js";
 import {
   buildExecApprovalFollowupPrompt,
   sendExecApprovalFollowup,
 } from "./bash-tools.exec-approval-followup.js";
+import { sanitizeExecResultTextForFamilySurface } from "./family-capability-policy.js";
 import { callGatewayTool } from "./tools/gateway.js";
 
 afterEach(() => {
@@ -281,6 +286,24 @@ describe("exec approval followup", () => {
         "Automatic session resume failed, so sending the status directly.\n\nCommand did not run: approval timed out.",
       idempotencyKey: "exec-approval-followup:req-denied-resume-failed",
     });
+  });
+
+  it("sanitizes denied followups for family surfaces", async () => {
+    vi.mocked(sanitizeExecResultTextForFamilySurface).mockResolvedValueOnce(
+      "系统命令未执行：需要额外批准，但批准流程未完成。",
+    );
+
+    await sendExecApprovalFollowup({
+      approvalId: "req-telegram-family",
+      sessionKey: "agent:ray:telegram:direct:8661349497",
+      turnSourceChannel: "telegram",
+      turnSourceTo: "8661349497",
+      turnSourceAccountId: "default",
+      resultText:
+        "Exec denied (gateway id=req-telegram-family, approval-timeout): python3 <<'PY' ...",
+    });
+
+    expect(sanitizeExecResultTextForFamilySurface).toHaveBeenCalled();
   });
 
   it("suppresses denied followups for subagent sessions", async () => {
