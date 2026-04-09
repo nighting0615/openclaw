@@ -599,7 +599,16 @@ describe("registerTelegramNativeCommands — session metadata", () => {
     )[0]?.[0];
     const call = (
       sessionMocks.recordSessionMetaFromInbound.mock.calls as unknown as Array<
-        [{ sessionKey?: string; ctx?: { OriginatingChannel?: string; Provider?: string } }]
+        [
+          {
+            sessionKey?: string;
+            ctx?: {
+              OriginatingChannel?: string;
+              Provider?: string;
+              CommandTargetSessionKey?: string;
+            };
+          },
+        ]
       >
     )[0]?.[0];
     expect(call?.ctx?.OriginatingChannel).toBe("telegram");

@@ -188,4 +188,57 @@ describe("recordInboundSession", () => {
     expect(route.sessionKey).toBe("agent:main:main");
     expect(route.createIfMissing).toBe(false);
   });
+
+  it("records native command inbound metadata against CommandTargetSessionKey", async () => {
+    await recordInboundSession({
+      storePath: "/tmp/openclaw-session-store.json",
+      sessionKey: "agent:main:telegram:slash:109950863",
+      ctx: {
+        ...ctx,
+        CommandSource: "native",
+        CommandTargetSessionKey: "agent:main:telegram:group:-1003794292916:topic:236",
+      },
+      onRecordError: vi.fn(),
+    });
+
+    expect(recordSessionMetaFromInboundMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:telegram:group:-1003794292916:topic:236",
+      }),
+    );
+  });
+
+  it("passes ctx when native command route updates the target session", async () => {
+    const nativeCtx: MsgContext = {
+      ...ctx,
+      CommandSource: "native",
+      SessionKey: "agent:main:telegram:slash:109950863",
+      CommandTargetSessionKey: "agent:main:telegram:group:-1003794292916:topic:236",
+    };
+
+    await recordInboundSession({
+      storePath: "/tmp/openclaw-session-store.json",
+      sessionKey: nativeCtx.SessionKey!,
+      ctx: nativeCtx,
+      updateLastRoute: {
+        sessionKey: "agent:main:telegram:group:-1003794292916:topic:236",
+        channel: "telegram",
+        to: "telegram:-1003794292916",
+        threadId: 236,
+      },
+      onRecordError: vi.fn(),
+    });
+
+    expect(updateLastRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:telegram:group:-1003794292916:topic:236",
+        ctx: nativeCtx,
+        deliveryContext: expect.objectContaining({
+          channel: "telegram",
+          to: "telegram:-1003794292916",
+          threadId: 236,
+        }),
+      }),
+    );
+  });
 });
