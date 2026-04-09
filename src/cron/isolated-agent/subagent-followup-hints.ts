@@ -23,6 +23,17 @@ const INTERIM_CRON_HINTS = [
   "should have your summary",
   "it'll auto-announce when done",
   "it will auto-announce when done",
+  // Chinese interim acknowledgements
+  "等待",
+  "稍等",
+  "正在执行",
+  "正在处理",
+  "处理中",
+  "执行中",
+  "请稍候",
+  "马上好",
+  "正在运行",
+  "脚本完成",
   ...SUBAGENT_FOLLOWUP_HINTS,
 ] as const;
 
