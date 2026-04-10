@@ -551,6 +551,22 @@ export function buildTtsSystemPromptHint(
       : autoMode === "tagged"
         ? "Only use TTS when you include [[tts:key=value]] directives or a [[tts:text]]...[[/tts:text]] block."
         : undefined;
+  // When TTS is "always" or "inbound", the user is in a voice-first
+  // interaction.  Inject style guidance so the model writes for the ear,
+  // not for the eye.  "tagged" mode is manual opt-in per message, so the
+  // user is still primarily reading — skip the style shift.
+  const voiceStyleHint =
+    autoMode === "always" || autoMode === "inbound"
+      ? [
+          "",
+          "Your reply will be spoken aloud. Write for the ear, not the eye:",
+          "- Use natural spoken language. No markdown, bullet points, tables, or code blocks.",
+          "- Match length to the request: a quick answer stays short; a story, explanation, or roleplay can be as long as it needs.",
+          '- Avoid visual references ("see above", "the table below", "in parentheses") — the listener cannot see them.',
+          "- Break long passages into shorter sentences for natural breathing rhythm.",
+          "- For casual exchanges, prefer concise conversational turns that invite back-and-forth.",
+        ].join("\n")
+      : undefined;
   return [
     "Voice (TTS) is enabled.",
     autoHint,
@@ -560,6 +576,7 @@ export function buildTtsSystemPromptHint(
     `Keep spoken text ≤${maxLength} chars to avoid auto-summary (summary ${summarize}).`,
     "If workspace context (especially MEMORY.md) tells you not to use [[tts:...]] or to use a local/non-tagged voice workflow, follow that workspace instruction instead.",
     "Use [[tts:...]] and optional [[tts:text]]...[[/tts:text]] to control voice/expressiveness.",
+    voiceStyleHint,
   ]
     .filter(Boolean)
     .join("\n");
