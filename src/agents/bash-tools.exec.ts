@@ -1452,7 +1452,7 @@ export function createExecTool(
       const familyExecPolicy = await evaluateFamilyRawExecPolicy({
         agentId,
         command: params.command,
-        workspaceDir: workdir,
+        workspaceDir: workdir ?? process.cwd(),
         argv: commandArgv,
       });
       if (!familyExecPolicy.allowed) {
