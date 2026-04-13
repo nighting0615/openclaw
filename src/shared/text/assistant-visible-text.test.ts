@@ -3,6 +3,7 @@ import {
   sanitizeAssistantVisibleText,
   sanitizeAssistantVisibleTextWithProfile,
   stripAssistantInternalScaffolding,
+  stripBareToolCallText,
   stripMinimaxToolCallXml,
   stripToolCallXmlTags,
 } from "./assistant-visible-text.js";
@@ -846,6 +847,44 @@ describe("sanitizeAssistantVisibleText", () => {
     expect(sanitizeAssistantVisibleText("Visible prefix <think>private reasoning tail")).toBe(
       "Visible prefix",
     );
+  });
+});
+
+describe("stripBareToolCallText", () => {
+  it("strips to=functions.exec with JSON payload", () => {
+    const input =
+      '✅♀♀♀♀analysis to=functions.exec  天天买彩票 ็ตทรู{"command":"cd ~/openclaw/workspaces/main && scripts/obsidian-daily.sh habit --name reading"}';
+    expect(stripBareToolCallText(input)).toBe("");
+  });
+
+  it("strips standalone functions.exec with braces", () => {
+    const input = 'functions.exec {"command":"ls"}';
+    expect(stripBareToolCallText(input)).toBe("");
+  });
+
+  it("strips functions.exec with parens wrapping braces", () => {
+    const input = 'functions.exec({"command":"ls"})';
+    expect(stripBareToolCallText(input)).toBe("");
+  });
+
+  it("preserves text without functions.* patterns", () => {
+    const input = "✅ 读书完成";
+    expect(stripBareToolCallText(input)).toBe("✅ 读书完成");
+  });
+
+  it("strips bare tool call but preserves surrounding text", () => {
+    const input = 'Hello functions.exec {"command":"ls"} world';
+    const result = stripBareToolCallText(input);
+    expect(result).not.toContain("functions.exec");
+    expect(result).toContain("Hello");
+  });
+});
+
+describe("sanitizeAssistantVisibleText strips bare tool calls end-to-end", () => {
+  it("removes functions.exec leak from delivery output", () => {
+    const input =
+      '✅♀♀♀♀analysis to=functions.exec  天天买彩票 ็ตทรู{"command":"cd ~/openclaw/workspaces/main && scripts/obsidian-daily.sh habit --name reading"}';
+    expect(sanitizeAssistantVisibleText(input)).toBe("");
   });
 });
 

@@ -563,6 +563,26 @@ export function stripLegacyBracketToolCallBlocks(text: string): string {
 }
 
 /**
+ * Strip bare (non-XML, non-bracket) tool call patterns that models sometimes
+ * emit as plain text instead of structured tool calls.  Covers patterns such
+ * as `to=functions.exec {"command":"..."}` or standalone
+ * `functions.exec(...)` / `functions.exec {...}` fragments.
+ */
+const BARE_TOOL_CALL_QUICK_RE = /functions\.\w+/i;
+export function stripBareToolCallText(text: string): string {
+  if (!text || !BARE_TOOL_CALL_QUICK_RE.test(text)) {
+    return text;
+  }
+
+  // Pattern: optional prefix + `to=functions.<name>` or `functions.<name>`
+  // followed by a JSON object, possibly with garbage text in between.
+  let cleaned = text.replace(/[^\n]*?\bto=functions\.\w+[\s\S]*?\{[^}]*\}/g, "");
+  cleaned = cleaned.replace(/\bfunctions\.\w+\s*\(?\s*[\s\S]*?\{[^}]*\}\s*\)?/g, "");
+
+  return cleaned.trim();
+}
+
+/**
  * Strip downgraded tool call text representations that leak into user-visible
  * text content when replaying history across providers.
  */
@@ -835,6 +855,7 @@ function applyAssistantVisibleTextStagePipeline(
     });
     cleaned = stripLegacyBracketToolCallBlocks(cleaned);
     cleaned = stripPlainTextToolCallBlocks(cleaned);
+    cleaned = stripBareToolCallText(cleaned);
     if (!options.preserveDowngradedToolText) {
       cleaned = stripDowngradedToolCallText(cleaned);
     }
