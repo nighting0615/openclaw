@@ -535,7 +535,10 @@ export function splitMediaFromOutput(
     }
 
     const trimmedStart = line.trimStart();
-    if (!trimmedStart.toUpperCase().startsWith("MEDIA:")) {
+    // Strip leading [[...]] inline directives (e.g. [[reply_to_current]]) before
+    // checking for MEDIA: prefix - LLMs often emit them on the same line.
+    const withoutDirectives = trimmedStart.replace(/^(\[\[[^\]]*\]\]\s*)+/, "");
+    if (!withoutDirectives.toUpperCase().startsWith("MEDIA:")) {
       const markdownImageResult = extractMarkdownImages
         ? collectMarkdownImageSegments({ line, media })
         : { lineSegments: [], foundMedia: false };

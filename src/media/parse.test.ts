@@ -119,7 +119,33 @@ describe("splitMediaFromOutput", () => {
       expected: { audioAsVoice: true, text: "Hello" },
       assertStable: true,
     },
-  ] as const)("$name", ({ input, expected, assertStable }) => {
+    {
+      name: "extracts MEDIA after [[reply_to_current]] on same line",
+      input:
+        "[[reply_to_current]]MEDIA:/Users/ai/openclaw/state/openclaw/artifacts/outbox/banner.png",
+      expected: {
+        mediaUrls: ["/Users/ai/openclaw/state/openclaw/artifacts/outbox/banner.png"],
+        text: "[[reply_to_current]]",
+      },
+    },
+    {
+      name: "extracts MEDIA after [[reply_to_current]] with space",
+      input: "[[reply_to_current]] MEDIA:/path/to/image.jpg",
+      expected: {
+        mediaUrls: ["/path/to/image.jpg"],
+        text: "[[reply_to_current]]",
+      },
+    },
+    {
+      name: "extracts MEDIA after multiple directives on same line",
+      input: "[[reply_to_current]][[audio_as_voice]]MEDIA:/path/voice.ogg",
+      expected: {
+        mediaUrls: ["/path/voice.ogg"],
+        text: "[[reply_to_current]]",
+        audioAsVoice: true,
+      },
+    },
+  ])("$name", ({ input, expected, assertStable }) => {
     expectParsedMediaOutputCase(input, expected);
     if (assertStable) {
       expectStableAudioAsVoiceDetectionCase(input);
