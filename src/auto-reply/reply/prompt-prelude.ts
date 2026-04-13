@@ -8,7 +8,7 @@ import type { MsgContext, TemplateContext } from "../templating.js";
 import { appendUntrustedContext } from "./untrusted-context.js";
 
 const REPLY_MEDIA_HINT =
-  "To send an image back, prefer the message tool (media/path/filePath). If you must inline, use MEDIA:https://example.com/image.jpg (spaces ok, quote if needed) or a safe relative path like MEDIA:./image.jpg. Absolute and ~ paths only work when they stay inside your allowed file-read boundary; host file:// URLs are blocked. Keep caption in the text body.";
+  "To send an image back, prefer the message tool (media/path/filePath). If you must inline, write MEDIA: followed by the exact file path returned by the tool - do not modify, shorten, or convert it. Both absolute paths (/path/to/file.png) and workspace-relative paths (./file.png) work when they stay inside your allowed file-read boundary. Never use ../, guessed ~ paths, or host file:// URLs. Keep caption in the text body.";
 const ROOM_EVENT_PROMPT = "[OpenClaw room event]";
 const ROOM_EVENT_VISIBLE_REPLY_CONTRACT = "message_tool_only";
 
