@@ -8,6 +8,7 @@ import {
   unbindConversationBindingRecord,
 } from "../bindings/records.js";
 import { getChannelPlugin, normalizeChannelId } from "../channels/plugins/index.js";
+import { resolveStateDir } from "../config/paths.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { expandHomePrefix } from "../infra/home-dir.js";
 import { writeJson } from "../infra/json-files.js";
@@ -29,7 +30,6 @@ import { getActivePluginRegistry } from "./runtime.js";
 
 const log = createSubsystemLogger("plugins/binding");
 
-const APPROVALS_PATH = "~/.openclaw/plugin-binding-approvals.json";
 const PLUGIN_BINDING_CUSTOM_ID_PREFIX = "pluginbind";
 const PLUGIN_BINDING_OWNER = "plugin";
 const PLUGIN_BINDING_SESSION_PREFIX = "plugin-binding";
@@ -156,7 +156,11 @@ function getPluginBindingGlobalState(): PluginBindingGlobalState {
 }
 
 function resolveApprovalsPath(): string {
-  return expandHomePrefix(APPROVALS_PATH);
+  return path.join(resolveStateDir(), "plugin-binding-approvals.json");
+}
+
+function resolveLegacyApprovalsPath(): string {
+  return expandHomePrefix("~/.openclaw/plugin-binding-approvals.json");
 }
 
 function normalizeChannel(value: string): string {
@@ -338,11 +342,17 @@ function createApprovalRequestId(): string {
 
 function loadApprovalsFromDisk(): PluginBindingApprovalsFile {
   const filePath = resolveApprovalsPath();
+  const legacyPath = resolveLegacyApprovalsPath();
+  const preferredPath = fs.existsSync(filePath)
+    ? filePath
+    : !fs.existsSync(legacyPath) || legacyPath === filePath
+      ? filePath
+      : legacyPath;
   try {
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(preferredPath)) {
       return { version: 1, approvals: [] };
     }
-    const raw = fs.readFileSync(filePath, "utf8");
+    const raw = fs.readFileSync(preferredPath, "utf8");
     const parsed = JSON.parse(raw) as Partial<PluginBindingApprovalsFile>;
     if (!Array.isArray(parsed.approvals)) {
       return { version: 1, approvals: [] };

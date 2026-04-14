@@ -5,6 +5,7 @@ import { format } from "node:util";
 import type { Command } from "commander";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime";
+import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
 import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { sleep } from "../api.js";
 import { validateProviderConfig, type VoiceCallConfig } from "./config.js";
@@ -223,8 +224,7 @@ function resolveMode(input: string): "off" | "serve" | "funnel" {
 }
 
 function resolveDefaultStorePath(config: VoiceCallConfig): string {
-  const preferred = path.join(os.homedir(), ".openclaw", "voice-calls");
-  const resolvedPreferred = resolveUserPath(preferred);
+  const resolvedPreferred = resolvePreferredVoiceCallStoreBase();
   const existing =
     [resolvedPreferred].find((dir) => {
       try {
@@ -235,6 +235,11 @@ function resolveDefaultStorePath(config: VoiceCallConfig): string {
     }) ?? resolvedPreferred;
   const base = config.store?.trim() ? resolveUserPath(config.store) : existing;
   return path.join(base, "calls.jsonl");
+}
+
+function resolvePreferredVoiceCallStoreBase(): string {
+  const current = path.join(resolveStateDir(process.env, os.homedir), "voice-calls");
+  return current;
 }
 
 function percentile(values: number[], p: number): number {
