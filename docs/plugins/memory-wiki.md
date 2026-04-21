@@ -394,6 +394,7 @@ Put config under `plugins.entries.memory-wiki.config`:
             indexDreamReports: true,
             indexDailyNotes: true,
             indexMemoryRoot: true,
+            indexPeopleProfiles: false,
             followMemoryEvents: true,
           },
           ingest: {
@@ -425,6 +426,7 @@ Key toggles:
 - `vaultMode`: `isolated`, `bridge`, `unsafe-local`
 - `vault.renderMode`: `native` or `obsidian`
 - `bridge.readMemoryArtifacts`: import active memory plugin public artifacts
+- `bridge.indexPeopleProfiles`: include `memory/people/*.md` profiles in bridge mode
 - `bridge.followMemoryEvents`: include event logs in bridge mode
 - `search.backend`: `shared` or `local`
 - `search.corpus`: `wiki`, `memory`, or `all`

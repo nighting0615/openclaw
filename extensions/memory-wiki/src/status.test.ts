@@ -174,6 +174,7 @@ describe("renderMemoryWikiStatus", () => {
         indexDreamReports: true,
         indexDailyNotes: true,
         indexMemoryRoot: true,
+        indexPeopleProfiles: false,
         followMemoryEvents: true,
       },
       bridgePublicArtifactCount: null,

@@ -40,6 +40,7 @@ Put config under `plugins.entries.memory-wiki.config`:
     indexDreamReports: true,
     indexDailyNotes: true,
     indexMemoryRoot: true,
+    indexPeopleProfiles: false,
     followMemoryEvents: true,
   },
 
@@ -98,6 +99,14 @@ Key beliefs can live in structured `claims` frontmatter with per-claim evidence,
 When `render.createBacklinks` is enabled, compile adds deterministic `## Related` blocks to pages. Those blocks list source pages, pages that reference the current page, and nearby pages that share the same source ids.
 
 When `render.createDashboards` is enabled, compile also maintains report dashboards under `reports/` for open questions, contradictions, low-confidence pages, and stale pages.
+
+Bridge mode can be narrowed to specific public artifact families:
+
+- `indexMemoryRoot`: import `MEMORY.md` / `memory.md`
+- `indexPeopleProfiles`: import `memory/people/*.md`
+- `indexDailyNotes`: import daily notes under `memory/`
+- `indexDreamReports`: import dream reports under `memory/dreaming/`
+- `followMemoryEvents`: import public memory event logs
 
 ## CLI
 
