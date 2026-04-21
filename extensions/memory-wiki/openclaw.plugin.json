@@ -101,6 +101,9 @@
           "indexMemoryRoot": {
             "type": "boolean"
           },
+          "indexPeopleProfiles": {
+            "type": "boolean"
+          },
           "followMemoryEvents": {
             "type": "boolean"
           }

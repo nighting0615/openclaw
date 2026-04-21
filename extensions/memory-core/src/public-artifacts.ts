@@ -51,7 +51,11 @@ async function collectWorkspaceArtifacts(params: {
   for (const absolutePath of await listMarkdownFilesRecursive(memoryDir)) {
     const relativePath = path.relative(params.workspaceDir, absolutePath).replace(/\\/g, "/");
     artifacts.push({
-      kind: relativePath.startsWith("memory/dreaming/") ? "dream-report" : "daily-note",
+      kind: relativePath.startsWith("memory/dreaming/")
+        ? "dream-report"
+        : relativePath.startsWith("memory/people/")
+          ? "memory-profile"
+          : "daily-note",
       workspaceDir: params.workspaceDir,
       relativePath,
       absolutePath,

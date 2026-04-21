@@ -66,6 +66,7 @@ describe("syncMemoryWikiBridgeSources", () => {
           enabled: true,
           readMemoryArtifacts: true,
           indexMemoryRoot: true,
+          indexPeopleProfiles: true,
           indexDailyNotes: true,
           indexDreamReports: true,
         },
@@ -73,6 +74,7 @@ describe("syncMemoryWikiBridgeSources", () => {
     });
 
     await fs.mkdir(path.join(workspaceDir, "memory", "dreaming"), { recursive: true });
+    await fs.mkdir(path.join(workspaceDir, "memory", "people"), { recursive: true });
     await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "# Durable Memory\n", "utf8");
     await fs.writeFile(
       path.join(workspaceDir, "memory", "2026-04-05.md"),
@@ -82,6 +84,11 @@ describe("syncMemoryWikiBridgeSources", () => {
     await fs.writeFile(
       path.join(workspaceDir, "memory", "dreaming", "2026-04-05.md"),
       "# Dream Report\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, "memory", "people", "ray.md"),
+      "# Ray Profile\n",
       "utf8",
     );
     registerBridgeArtifacts([
@@ -109,6 +116,14 @@ describe("syncMemoryWikiBridgeSources", () => {
         agentIds: ["main"],
         contentType: "markdown",
       },
+      {
+        kind: "memory-profile",
+        workspaceDir,
+        relativePath: "memory/people/ray.md",
+        absolutePath: path.join(workspaceDir, "memory", "people", "ray.md"),
+        agentIds: ["main"],
+        contentType: "markdown",
+      },
     ]);
 
     const appConfig: OpenClawConfig = {
@@ -120,17 +135,17 @@ describe("syncMemoryWikiBridgeSources", () => {
     const first = await syncMemoryWikiBridgeSources({ config, appConfig });
 
     expect(first.workspaces).toBe(1);
-    expect(first.artifactCount).toBe(3);
-    expect(first.importedCount).toBe(3);
+    expect(first.artifactCount).toBe(4);
+    expect(first.importedCount).toBe(4);
     expect(first.updatedCount).toBe(0);
     expect(first.skippedCount).toBe(0);
     expect(first.removedCount).toBe(0);
-    expect(first.pagePaths).toHaveLength(3);
+    expect(first.pagePaths).toHaveLength(4);
 
     const sourcePages = await fs.readdir(path.join(vaultDir, "sources"));
     expect(
       sourcePages.reduce((count, name) => count + (name.startsWith("bridge-") ? 1 : 0), 0),
-    ).toBe(3);
+    ).toBe(4);
 
     const memoryPage = await fs.readFile(path.join(vaultDir, first.pagePaths[0] ?? ""), "utf8");
     expect(memoryPage).toContain("sourceType: memory-bridge");
@@ -140,7 +155,7 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     expect(second.importedCount).toBe(0);
     expect(second.updatedCount).toBe(0);
-    expect(second.skippedCount).toBe(3);
+    expect(second.skippedCount).toBe(4);
     expect(second.removedCount).toBe(0);
 
     const logLines = (await fs.readFile(path.join(vaultDir, ".openclaw-wiki", "log.jsonl"), "utf8"))
@@ -259,6 +274,7 @@ describe("syncMemoryWikiBridgeSources", () => {
         bridge: {
           enabled: true,
           indexMemoryRoot: true,
+          indexPeopleProfiles: false,
           indexDailyNotes: false,
           indexDreamReports: false,
           followMemoryEvents: false,
@@ -420,7 +436,6 @@ describe("syncMemoryWikiBridgeSources", () => {
         contentType: "markdown",
       },
     ]);
-
     const appConfig: OpenClawConfig = {
       agents: {
         list: [{ id: "main", default: true, workspace: workspaceDir }],
@@ -435,5 +450,60 @@ describe("syncMemoryWikiBridgeSources", () => {
     await expect(fs.readFile(path.join(vaultDir, pagePath), "utf8")).resolves.toContain(
       "# Deep Unicode Note",
     );
+  });
+
+  it("prunes existing bridge pages when memory artifact imports are disabled", async () => {
+    const workspaceDir = await createBridgeWorkspace("disabled-imports-workspace");
+    const { rootDir: vaultDir, config } = await createVault({
+      rootDir: nextCaseRoot("disabled-imports-vault"),
+      config: {
+        vaultMode: "bridge",
+        bridge: {
+          enabled: true,
+          readMemoryArtifacts: true,
+          indexMemoryRoot: true,
+          indexPeopleProfiles: false,
+        },
+      },
+    });
+
+    await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "# Durable Memory\n", "utf8");
+    registerBridgeArtifacts([
+      {
+        kind: "memory-root",
+        workspaceDir,
+        relativePath: "MEMORY.md",
+        absolutePath: path.join(workspaceDir, "MEMORY.md"),
+        agentIds: ["main"],
+        contentType: "markdown",
+      },
+    ]);
+    const appConfig: OpenClawConfig = {
+      agents: {
+        list: [{ id: "main", default: true, workspace: workspaceDir }],
+      },
+    };
+
+    const first = await syncMemoryWikiBridgeSources({ config, appConfig });
+    const firstPagePath = first.pagePaths[0] ?? "";
+    await expect(fs.stat(path.join(vaultDir, firstPagePath))).resolves.toBeTruthy();
+
+    const disabledConfig = {
+      ...config,
+      bridge: {
+        ...config.bridge,
+        readMemoryArtifacts: false,
+      },
+    };
+    const second = await syncMemoryWikiBridgeSources({
+      config: disabledConfig,
+      appConfig,
+    });
+
+    expect(second.artifactCount).toBe(0);
+    expect(second.removedCount).toBe(1);
+    await expect(fs.stat(path.join(vaultDir, firstPagePath))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

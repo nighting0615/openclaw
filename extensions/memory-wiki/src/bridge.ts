@@ -49,6 +49,8 @@ function shouldImportArtifact(
   switch (artifact.kind) {
     case "memory-root":
       return bridgeConfig.indexMemoryRoot;
+    case "memory-profile":
+      return bridgeConfig.indexPeopleProfiles;
     case "daily-note":
       return bridgeConfig.indexDailyNotes;
     case "dream-report":
@@ -205,17 +207,31 @@ export async function syncMemoryWikiBridgeSources(params: {
   appConfig?: OpenClawConfig;
 }): Promise<BridgeMemoryWikiResult> {
   await initializeMemoryWikiVault(params.config);
-  if (
-    params.config.vaultMode !== "bridge" ||
-    !params.config.bridge.enabled ||
-    !params.config.bridge.readMemoryArtifacts ||
-    !params.appConfig
-  ) {
+  if (params.config.vaultMode !== "bridge" || !params.config.bridge.enabled) {
     return {
       importedCount: 0,
       updatedCount: 0,
       skippedCount: 0,
       removedCount: 0,
+      artifactCount: 0,
+      workspaces: 0,
+      pagePaths: [],
+    };
+  }
+  if (!params.config.bridge.readMemoryArtifacts || !params.appConfig) {
+    const state = await readMemoryWikiSourceSyncState(params.config.vault.path);
+    const removedCount = await pruneImportedSourceEntries({
+      vaultRoot: params.config.vault.path,
+      group: "bridge",
+      activeKeys: new Set<string>(),
+      state,
+    });
+    await writeMemoryWikiSourceSyncState(params.config.vault.path, state);
+    return {
+      importedCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      removedCount,
       artifactCount: 0,
       workspaces: 0,
       pagePaths: [],

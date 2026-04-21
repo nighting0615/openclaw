@@ -44,6 +44,14 @@ const DREAMING_TRANSCRIPT_PROMPT_LINE_RE =
 const DREAMING_DIFF_PREFIX_RE = /@@\s*-\d+(?:,\d+)?\s+[-*+]\s+/iy;
 const inProcessShortTermLocks = new Map<string, Promise<void>>();
 const ensuredShortTermDirs = new Map<string, Promise<void>>();
+const DREAMING_NOISE_SNIPPET_PATTERNS = [
+  /write a dream diary entry from these memory fragments/i,
+  /reflections:\s*theme:/i,
+  /possible lasting truths/i,
+  /dreaming-narrative-/i,
+  /openclaw:dreaming:/i,
+  /main session:\s*read heartbeat/i,
+] as const;
 
 type PromotionWeights = {
   frequency: number;
@@ -321,6 +329,18 @@ function isContaminatedDreamingSnippet(raw: string): boolean {
 
 function normalizeMemoryPath(rawPath: string): string {
   return rawPath.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function isDreamingNoiseSnippet(snippet: string): boolean {
+  const normalized = normalizeSnippet(snippet).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return DREAMING_NOISE_SNIPPET_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isEligibleShortTermRecallTarget(pathValue: string, snippet: string): boolean {
+  return isShortTermMemoryPath(pathValue) && !isDreamingNoiseSnippet(snippet);
 }
 
 function buildClaimHash(snippet: string): string {
@@ -873,6 +893,32 @@ async function writePhaseSignalStore(
   });
 }
 
+function filterStoreEntriesByActivePaths(store: ShortTermRecallStore): ShortTermRecallStore {
+  const nextEntries = Object.fromEntries(
+    Object.entries(store.entries).filter(([, entry]) =>
+      isEligibleShortTermRecallTarget(entry.path, entry.snippet),
+    ),
+  );
+  return {
+    ...store,
+    entries: nextEntries,
+  };
+}
+
+function filterPhaseSignalsByKnownKeys(
+  store: ShortTermRecallStore,
+  phaseSignals: ShortTermPhaseSignalStore,
+): ShortTermPhaseSignalStore {
+  const knownKeys = new Set(Object.keys(store.entries));
+  const nextEntries = Object.fromEntries(
+    Object.entries(phaseSignals.entries).filter(([key]) => knownKeys.has(key)),
+  );
+  return {
+    ...phaseSignals,
+    entries: nextEntries,
+  };
+}
+
 async function writeStore(workspaceDir: string, store: ShortTermRecallStore): Promise<void> {
   await ensureShortTermArtifactsDir(workspaceDir);
   await privateFileStore(workspaceDir).writeJson(SHORT_TERM_STORE_RELATIVE_PATH, store, {
@@ -886,9 +932,6 @@ export function isShortTermMemoryPath(filePath: string): boolean {
     return false;
   }
   if (SHORT_TERM_PATH_RE.test(normalized)) {
-    return true;
-  }
-  if (SHORT_TERM_SESSION_CORPUS_RE.test(normalized)) {
     return true;
   }
   return SHORT_TERM_BASENAME_RE.test(normalized);
@@ -950,7 +993,9 @@ export async function recordShortTermRecalls(params: {
     return;
   }
   const relevant = params.results.filter(
-    (result) => result.source === "memory" && isShortTermMemoryPath(result.path),
+    (result) =>
+      result.source === "memory" &&
+      isEligibleShortTermRecallTarget(normalizeMemoryPath(result.path), result.snippet),
   );
   if (relevant.length === 0) {
     return;
@@ -1078,7 +1123,7 @@ export async function recordGroundedShortTermCandidates(params: {
         !snippet ||
         isContaminatedDreamingSnippet(snippet) ||
         !normalizedPath ||
-        !isShortTermMemoryPath(normalizedPath) ||
+        !isEligibleShortTermRecallTarget(normalizedPath, snippet) ||
         !Number.isFinite(item.startLine) ||
         !Number.isFinite(item.endLine)
       ) {
@@ -1256,7 +1301,11 @@ export async function rankShortTermPromotionCandidates(
   const candidates: PromotionCandidate[] = [];
 
   for (const entry of Object.values(store.entries)) {
-    if (!entry || entry.source !== "memory" || !isShortTermMemoryPath(entry.path)) {
+    if (
+      !entry ||
+      entry.source !== "memory" ||
+      !isEligibleShortTermRecallTarget(entry.path, entry.snippet)
+    ) {
       continue;
     }
     if (isContaminatedDreamingSnippet(entry.snippet)) {
@@ -1376,7 +1425,9 @@ export async function readShortTermRecallEntries(params: {
   const store = await readStore(workspaceDir, nowIso);
   return Object.values(store.entries).filter(
     (entry): entry is ShortTermRecallEntry =>
-      Boolean(entry) && entry.source === "memory" && isShortTermMemoryPath(entry.path),
+      Boolean(entry) &&
+      entry.source === "memory" &&
+      isEligibleShortTermRecallTarget(entry.path, entry.snippet),
   );
 }
 
@@ -1961,9 +2012,10 @@ export async function repairShortTermPromotionArtifacts(params: {
       const parsed = raw.trim().length > 0 ? (JSON.parse(raw) as unknown) : emptyStore(nowIso);
       const rawEntries = Object.keys(asRecord(parsed)?.entries ?? {}).length;
       const normalized = normalizeStore(parsed, nowIso);
-      removedInvalidEntries = Math.max(0, rawEntries - Object.keys(normalized.entries).length);
+      const filtered = filterStoreEntriesByActivePaths(normalized);
+      removedInvalidEntries = Math.max(0, rawEntries - Object.keys(filtered.entries).length);
       const nextEntries = Object.fromEntries(
-        Object.entries(normalized.entries).map(([key, entry]) => {
+        Object.entries(filtered.entries).map(([key, entry]) => {
           const conceptTags = deriveConceptTags({ path: entry.path, snippet: entry.snippet });
           const fallbackDay = normalizeIsoDay(entry.lastRecalledAt) ?? nowIso.slice(0, 10);
           return [
@@ -1987,7 +2039,7 @@ export async function repairShortTermPromotionArtifacts(params: {
       );
       const comparableStore: ShortTermRecallStore = {
         version: 1,
-        updatedAt: normalized.updatedAt,
+        updatedAt: filtered.updatedAt,
         entries: nextEntries,
       };
       const comparableRaw = `${JSON.stringify(comparableStore, null, 2)}\n`;
@@ -1997,6 +2049,32 @@ export async function repairShortTermPromotionArtifacts(params: {
           updatedAt: nowIso,
         });
         rewroteStore = true;
+      }
+      const phaseSignalRaw = await fs
+        .readFile(resolvePhaseSignalPath(workspaceDir), "utf-8")
+        .catch((err: unknown) => {
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            return "";
+          }
+          throw err;
+        });
+      if (phaseSignalRaw.trim().length > 0) {
+        const normalizedPhaseSignals = normalizePhaseSignalStore(
+          JSON.parse(phaseSignalRaw),
+          nowIso,
+        );
+        const filteredPhaseSignals = filterPhaseSignalsByKnownKeys(
+          comparableStore,
+          normalizedPhaseSignals,
+        );
+        const comparablePhaseRaw = `${JSON.stringify(filteredPhaseSignals, null, 2)}\n`;
+        if (comparablePhaseRaw !== `${phaseSignalRaw.trimEnd()}\n`) {
+          await writePhaseSignalStore(workspaceDir, {
+            ...filteredPhaseSignals,
+            updatedAt: nowIso,
+          });
+          rewroteStore = true;
+        }
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {

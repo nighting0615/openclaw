@@ -109,6 +109,14 @@ const MANAGED_DAILY_DREAMING_BLOCKS = [
     endMarker: "<!-- openclaw:dreaming:rem:end -->",
   },
 ] as const;
+const DAILY_DREAMING_NOISE_PATTERNS = [
+  /write a dream diary entry from these memory fragments/i,
+  /reflections:\s*theme:/i,
+  /possible lasting truths/i,
+  /dreaming-narrative-/i,
+  /openclaw:dreaming:/i,
+  /main session:\s*read heartbeat/i,
+] as const;
 
 function resolveWorkspaces(params: {
   cfg?: DreamingHostConfig;
@@ -164,6 +172,9 @@ function normalizeDailyHeading(line: string): string | null {
   if (!heading || DAILY_MEMORY_FILENAME_RE.test(heading) || isGenericDailyHeading(heading)) {
     return null;
   }
+  if (isDreamingGeneratedDailyLine(heading)) {
+    return null;
+  }
   return heading.slice(0, DAILY_INGESTION_MAX_SNIPPET_CHARS).replace(/\s+/g, " ");
 }
 
@@ -187,11 +198,25 @@ function normalizeDailySnippet(line: string): string | null {
   if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("<!--")) {
     return null;
   }
+  if (isDreamingGeneratedDailyLine(trimmed)) {
+    return null;
+  }
   const withoutListMarker = normalizeDailyListMarker(trimmed);
   if (withoutListMarker.length < DAILY_INGESTION_MIN_SNIPPET_CHARS) {
     return null;
   }
+  if (isDreamingGeneratedDailyLine(withoutListMarker)) {
+    return null;
+  }
   return withoutListMarker.slice(0, DAILY_INGESTION_MAX_SNIPPET_CHARS).replace(/\s+/g, " ");
+}
+
+function isDreamingGeneratedDailyLine(line: string): boolean {
+  const normalized = line.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return false;
+  }
+  return DAILY_DREAMING_NOISE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 type DailySnippetChunk = {

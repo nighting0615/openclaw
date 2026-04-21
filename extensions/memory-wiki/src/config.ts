@@ -31,6 +31,7 @@ export type MemoryWikiPluginConfig = {
     indexDreamReports?: boolean;
     indexDailyNotes?: boolean;
     indexMemoryRoot?: boolean;
+    indexPeopleProfiles?: boolean;
     followMemoryEvents?: boolean;
   };
   unsafeLocal?: {
@@ -74,6 +75,7 @@ export type ResolvedMemoryWikiConfig = {
     indexDreamReports: boolean;
     indexDailyNotes: boolean;
     indexMemoryRoot: boolean;
+    indexPeopleProfiles: boolean;
     followMemoryEvents: boolean;
   };
   unsafeLocal: {
@@ -127,6 +129,7 @@ const MemoryWikiConfigSource = z.strictObject({
       indexDreamReports: z.boolean().optional(),
       indexDailyNotes: z.boolean().optional(),
       indexMemoryRoot: z.boolean().optional(),
+      indexPeopleProfiles: z.boolean().optional(),
       followMemoryEvents: z.boolean().optional(),
     })
     .optional(),
@@ -226,6 +229,7 @@ export function resolveMemoryWikiConfig(
       indexDreamReports: safeConfig.bridge?.indexDreamReports ?? true,
       indexDailyNotes: safeConfig.bridge?.indexDailyNotes ?? true,
       indexMemoryRoot: safeConfig.bridge?.indexMemoryRoot ?? true,
+      indexPeopleProfiles: safeConfig.bridge?.indexPeopleProfiles ?? false,
       followMemoryEvents: safeConfig.bridge?.followMemoryEvents ?? true,
     },
     unsafeLocal: {

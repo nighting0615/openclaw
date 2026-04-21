@@ -77,6 +77,7 @@ describe("memory-wiki manifest config schema", () => {
       bridge: {
         enabled: true,
         readMemoryArtifacts: true,
+        indexPeopleProfiles: true,
         followMemoryEvents: true,
       },
       unsafeLocal: {

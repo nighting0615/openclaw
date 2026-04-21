@@ -94,7 +94,7 @@ describe("short-term promotion", () => {
   it("detects short-term daily memory paths", () => {
     expect(isShortTermMemoryPath("memory/2026-04-03.md")).toBe(true);
     expect(isShortTermMemoryPath("2026-04-03.md")).toBe(true);
-    expect(isShortTermMemoryPath("memory/.dreams/session-corpus/2026-04-03.txt")).toBe(true);
+    expect(isShortTermMemoryPath("memory/.dreams/session-corpus/2026-04-03.txt")).toBe(false);
     expect(isShortTermMemoryPath("notes/2026-04-03.md")).toBe(false);
     expect(isShortTermMemoryPath("MEMORY.md")).toBe(false);
     expect(isShortTermMemoryPath("memory/network.md")).toBe(false);
@@ -1778,6 +1778,172 @@ describe("short-term promotion", () => {
       };
       expect(store.version).toBe(1);
       expect(store.entries).toEqual({});
+    });
+  });
+
+  it("repairs legacy session-corpus recalls and prunes orphaned phase signals", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const storePath = resolveShortTermRecallStorePath(workspaceDir);
+      const phaseSignalPath = resolveShortTermPhaseSignalStorePath(workspaceDir);
+      await fs.writeFile(
+        storePath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            updatedAt: "2026-04-21T00:00:00.000Z",
+            entries: {
+              keep: {
+                key: "keep",
+                path: "memory/2026-04-21.md",
+                startLine: 3,
+                endLine: 3,
+                source: "memory",
+                snippet: "Read an article about robotics market structure.",
+                recallCount: 2,
+                dailyCount: 1,
+                groundedCount: 0,
+                totalScore: 1.7,
+                maxScore: 0.9,
+                firstRecalledAt: "2026-04-20T00:00:00.000Z",
+                lastRecalledAt: "2026-04-21T00:00:00.000Z",
+                queryHashes: ["a"],
+                recallDays: ["2026-04-21"],
+                conceptTags: ["robotics"],
+              },
+              drop: {
+                key: "drop",
+                path: "memory/.dreams/session-corpus/2026-04-21.txt",
+                startLine: 10,
+                endLine: 10,
+                source: "memory",
+                snippet: "Write a dream diary entry from these memory fragments.",
+                recallCount: 4,
+                dailyCount: 0,
+                groundedCount: 0,
+                totalScore: 2.2,
+                maxScore: 0.8,
+                firstRecalledAt: "2026-04-20T00:00:00.000Z",
+                lastRecalledAt: "2026-04-21T00:00:00.000Z",
+                queryHashes: ["b"],
+                recallDays: ["2026-04-21"],
+                conceptTags: ["dreaming"],
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf-8",
+      );
+      await fs.writeFile(
+        phaseSignalPath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            updatedAt: "2026-04-21T00:00:00.000Z",
+            entries: {
+              keep: {
+                key: "keep",
+                lightHits: 1,
+                remHits: 0,
+                lastLightAt: "2026-04-21T00:00:00.000Z",
+              },
+              drop: {
+                key: "drop",
+                lightHits: 2,
+                remHits: 1,
+                lastLightAt: "2026-04-21T00:00:00.000Z",
+                lastRemAt: "2026-04-21T00:00:00.000Z",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf-8",
+      );
+
+      const repair = await repairShortTermPromotionArtifacts({ workspaceDir });
+
+      expect(repair.changed).toBe(true);
+      expect(repair.rewroteStore).toBe(true);
+      expect(repair.removedInvalidEntries).toBe(1);
+
+      const repairedStore = JSON.parse(await fs.readFile(storePath, "utf-8")) as {
+        entries: Record<string, unknown>;
+      };
+      expect(Object.keys(repairedStore.entries)).toEqual(["keep"]);
+
+      const repairedPhaseSignals = JSON.parse(await fs.readFile(phaseSignalPath, "utf-8")) as {
+        entries: Record<string, unknown>;
+      };
+      expect(Object.keys(repairedPhaseSignals.entries)).toEqual(["keep"]);
+    });
+  });
+
+  it("repairs daily-note dreaming residue that survived under valid memory paths", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const storePath = resolveShortTermRecallStorePath(workspaceDir);
+      await fs.writeFile(
+        storePath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            updatedAt: "2026-04-21T00:00:00.000Z",
+            entries: {
+              keep: {
+                key: "keep",
+                path: "memory/2026-04-21.md",
+                startLine: 8,
+                endLine: 8,
+                source: "memory",
+                snippet: "Investigated robotics supply chain software consolidation.",
+                recallCount: 2,
+                dailyCount: 1,
+                groundedCount: 0,
+                totalScore: 1.5,
+                maxScore: 0.83,
+                firstRecalledAt: "2026-04-20T00:00:00.000Z",
+                lastRecalledAt: "2026-04-21T00:00:00.000Z",
+                queryHashes: ["a"],
+                recallDays: ["2026-04-21"],
+                conceptTags: ["robotics"],
+              },
+              drop: {
+                key: "drop",
+                path: "memory/2026-04-14.md",
+                startLine: 5,
+                endLine: 5,
+                source: "memory",
+                snippet:
+                  "dreaming-narrative-light-1776106801193: [Tue 2026-04-14 03:00 GMT+8] Write a dream diary entry from these memory fragments.",
+                recallCount: 1,
+                dailyCount: 1,
+                groundedCount: 0,
+                totalScore: 0.62,
+                maxScore: 0.62,
+                firstRecalledAt: "2026-04-14T00:00:00.000Z",
+                lastRecalledAt: "2026-04-14T00:00:00.000Z",
+                queryHashes: ["b"],
+                recallDays: ["2026-04-14"],
+                conceptTags: ["dreaming"],
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf-8",
+      );
+
+      const repair = await repairShortTermPromotionArtifacts({ workspaceDir });
+
+      expect(repair.changed).toBe(true);
+      expect(repair.removedInvalidEntries).toBe(1);
+      const repairedStore = JSON.parse(await fs.readFile(storePath, "utf-8")) as {
+        entries: Record<string, unknown>;
+      };
+      expect(Object.keys(repairedStore.entries)).toEqual(["keep"]);
     });
   });
 
