@@ -24,10 +24,12 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   buildAgentMainSessionKey,
   DEFAULT_AGENT_ID,
+  buildAgentPeerSessionKey,
   normalizeAgentId,
   normalizeMainKey,
 } from "../../routing/session-key.js";
 import { resolveSessionIdMatchSelection } from "../../sessions/session-id-resolution.js";
+import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
 
@@ -199,6 +201,7 @@ export function resolveStoredSessionKeyForSessionId(opts: {
 export function resolveSessionKeyForRequest(opts: {
   cfg: OpenClawConfig;
   to?: string;
+  channel?: string;
   sessionId?: string;
   sessionKey?: string;
   agentId?: string;
@@ -226,8 +229,21 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionStore = loadSessionStore(storePath);
 
   const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
+  const explicitChannel = normalizeMessageChannel(opts.channel);
+  const explicitDirectChannelSessionKey =
+    !explicitSessionKey && explicitChannel && opts.to?.trim()
+      ? buildAgentPeerSessionKey({
+          agentId: opts.agentId ?? DEFAULT_AGENT_ID,
+          channel: explicitChannel,
+          peerKind: "direct",
+          peerId: opts.to.trim().replace(new RegExp(`^${explicitChannel}:`, "i"), ""),
+          dmScope: "per-channel-peer",
+        })
+      : undefined;
   let sessionKey: string | undefined =
-    explicitSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey, storeAgentId) : undefined);
+    explicitSessionKey ??
+    explicitDirectChannelSessionKey ??
+    (ctx ? resolveSessionKey(scope, ctx, mainKey, storeAgentId) : undefined);
 
   if (ctx && !requestedAgentId && !requestedSessionId && !explicitSessionKey) {
     const legacyMainSession = resolveLegacyMainStoreSessionForDefaultAgent({
@@ -287,6 +303,7 @@ export function resolveSessionKeyForRequest(opts: {
 export function resolveSession(opts: {
   cfg: OpenClawConfig;
   to?: string;
+  channel?: string;
   sessionId?: string;
   sessionKey?: string;
   agentId?: string;
@@ -295,6 +312,7 @@ export function resolveSession(opts: {
   const { sessionKey, sessionStore, storePath } = resolveSessionKeyForRequest({
     cfg: opts.cfg,
     to: opts.to,
+    channel: opts.channel,
     sessionId: opts.sessionId,
     sessionKey: opts.sessionKey,
     agentId: opts.agentId,

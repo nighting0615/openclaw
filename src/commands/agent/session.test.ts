@@ -174,6 +174,34 @@ describe("resolveSessionKeyForRequest", () => {
     expect(result.storePath).toBe(MYBOT_STORE_PATH);
   });
 
+  it("uses a channel-scoped direct session key when channel and direct target are explicit", () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:telegram:direct:109950863": { sessionId: "sess-tg-1", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      channel: "telegram",
+      to: "109950863",
+    });
+    expect(result.sessionKey).toBe("agent:main:telegram:direct:109950863");
+  });
+
+  it("normalizes a channel-prefixed direct target when channel is explicit", () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:telegram:direct:109950863": { sessionId: "sess-tg-1", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      channel: "telegram",
+      to: "telegram:109950863",
+    });
+    expect(result.sessionKey).toBe("agent:main:telegram:direct:109950863");
+  });
+
   it("finds session by sessionId via reverse lookup in primary store", () => {
     mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
     mocks.loadSessionStore.mockReturnValue({
@@ -294,6 +322,25 @@ describe("resolveSessionKeyForRequest", () => {
       sessionId: "nonexistent-id",
     });
     expect(result.sessionKey).toBe("agent:main:explicit:nonexistent-id");
+  });
+
+  it("does not let explicit agentId override a matching sessionId lookup", () => {
+    setupMainAndMybotStorePaths();
+    mockStoresByPath({
+      [MAIN_STORE_PATH]: {
+        "agent:main:telegram:direct:109950863": {
+          sessionId: "telegram-session-id",
+          updatedAt: 1,
+        },
+      },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      agentId: "main",
+      sessionId: "telegram-session-id",
+    });
+    expect(result.sessionKey).toBe("agent:main:telegram:direct:109950863");
   });
 
   it("does not search other stores when explicitSessionKey is set", () => {

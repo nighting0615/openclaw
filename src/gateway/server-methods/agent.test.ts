@@ -27,6 +27,7 @@ const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
 const mocks = vi.hoisted(() => ({
   loadSessionEntry: vi.fn(),
   loadGatewaySessionRow: vi.fn(),
+  loadCombinedSessionStoreForGateway: vi.fn(),
   updateSessionStore: vi.fn(),
   agentCommand: vi.fn(),
   registerAgentRunContext: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock("../session-utils.js", async () => {
     ...actual,
     loadSessionEntry: mocks.loadSessionEntry,
     loadGatewaySessionRow: mocks.loadGatewaySessionRow,
+    loadCombinedSessionStoreForGateway: mocks.loadCombinedSessionStoreForGateway,
   };
 });
 
@@ -332,6 +334,10 @@ function primeMainAgentRun(params?: { sessionId?: string; cfg?: Record<string, u
   mocks.agentCommand.mockResolvedValue({
     payloads: [{ text: "ok" }],
     meta: { durationMs: 100 },
+  });
+  mocks.loadCombinedSessionStoreForGateway.mockReturnValue({
+    storePath: "/tmp/sessions.json",
+    store: {},
   });
 }
 
@@ -2871,6 +2877,49 @@ describe("gateway agent handler", () => {
     const sessionStore = requireValue(capturedStore, "updated session store missing");
     expect(sessionStore).toHaveProperty("agent:main:work");
     expect(sessionStore["agent:main:MAIN"]).toBeUndefined();
+  });
+
+  it("reuses the matching channel session when only sessionId is provided", async () => {
+    mocks.loadCombinedSessionStoreForGateway.mockReturnValue({
+      storePath: "(multiple)",
+      store: {
+        "agent:main:telegram:direct:109950863": {
+          sessionId: "telegram-session-id",
+          updatedAt: 20,
+        },
+        "agent:main:main": {
+          sessionId: "other-main-session-id",
+          updatedAt: 10,
+        },
+      },
+    });
+    mocks.loadSessionEntry.mockReturnValue({
+      cfg: {},
+      storePath: "/tmp/sessions.json",
+      entry: {
+        sessionId: "telegram-session-id",
+        updatedAt: Date.now(),
+      },
+      canonicalKey: "agent:main:telegram:direct:109950863",
+    });
+    mocks.updateSessionStore.mockResolvedValue(undefined);
+    mocks.agentCommand.mockResolvedValue({
+      payloads: [{ text: "ok" }],
+      meta: { durationMs: 100 },
+    });
+
+    await invokeAgent(
+      {
+        message: "re-run telegram session",
+        sessionId: "telegram-session-id",
+        idempotencyKey: "test-idem-session-id-routing",
+      },
+      { reqId: "session-id-routing" },
+    );
+
+    expect(mocks.loadSessionEntry).toHaveBeenCalledWith("agent:main:telegram:direct:109950863");
+    const call = readLastAgentCommandCall();
+    expect(call?.sessionId).toBe("telegram-session-id");
   });
 
   it("handles bare /new by resetting the same session and sending reset greeting prompt", async () => {

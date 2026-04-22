@@ -295,6 +295,34 @@ describe("agentCliCommand", () => {
     });
   });
 
+  it("routes explicit channel direct targets through a channel-scoped session key", async () => {
+    await withTempStore(async ({ store }) => {
+      fs.writeFileSync(
+        store,
+        JSON.stringify(
+          {
+            "agent:main:telegram:direct:109950863": {
+              sessionId: "telegram-direct-session",
+              updatedAt: Date.now(),
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      mockGatewaySuccessReply();
+
+      await agentCliCommand({ message: "hi", to: "109950863", channel: "telegram" }, runtime);
+
+      expect(callGateway).toHaveBeenCalledTimes(1);
+      const request = callGateway.mock.calls[0]?.[0] as {
+        params?: { sessionKey?: string };
+      };
+      expect(request.params?.sessionKey).toBe("agent:main:telegram:direct:109950863");
+    });
+  });
+
   it("falls back to embedded agent when gateway fails", async () => {
     await withTempStore(async () => {
       callGateway.mockRejectedValue(createGatewayClosedError());

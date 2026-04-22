@@ -73,6 +73,7 @@ import {
   type InputProvenance,
 } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
+import { resolvePreferredSessionKeyForSessionIdMatches } from "../../sessions/session-id-resolution.js";
 import {
   parseRawSessionConversationRef,
   parseThreadSessionSuffix,
@@ -126,6 +127,7 @@ import { reactivateCompletedSubagentSession } from "../session-subagent-reactiva
 import {
   canonicalizeSpawnedByForAgent,
   loadGatewaySessionRow,
+  loadCombinedSessionStoreForGateway,
   loadSessionEntry,
   migrateAndPruneGatewaySessionStoreKey,
   resolveGatewayModelSupportsImages,
@@ -870,14 +872,22 @@ export const agentHandlers: GatewayRequestHandlers = {
       return;
     }
     const requestedSessionId = normalizeOptionalString(request.sessionId);
-    let requestedSessionKey =
-      requestedSessionKeyRaw ??
-      (!requestedSessionId
-        ? resolveExplicitAgentSessionKey({
-            cfg,
-            agentId,
-          })
-        : undefined);
+    let requestedSessionKey = requestedSessionKeyRaw;
+    if (!requestedSessionKey && requestedSessionId) {
+      const { store } = loadCombinedSessionStoreForGateway(cfg);
+      const matches = Object.entries(store).filter(
+        (entry): entry is [string, SessionEntry] => entry[1]?.sessionId === requestedSessionId,
+      );
+      requestedSessionKey =
+        resolvePreferredSessionKeyForSessionIdMatches(matches, requestedSessionId) ??
+        requestedSessionKey;
+    }
+    if (!requestedSessionKey) {
+      requestedSessionKey = resolveExplicitAgentSessionKey({
+        cfg,
+        agentId,
+      });
+    }
     if (agentId && requestedSessionKeyRaw) {
       const sessionAgentId = resolveAgentIdFromSessionKey(requestedSessionKeyRaw);
       if (sessionAgentId !== agentId) {

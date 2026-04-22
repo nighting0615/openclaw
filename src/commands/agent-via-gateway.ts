@@ -170,15 +170,15 @@ async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: RuntimeEnv) {
     timeoutSeconds === 0
       ? NO_GATEWAY_TIMEOUT_MS // no timeout (timer-safe max)
       : Math.max(10_000, (timeoutSeconds + 30) * 1000);
+  const channel = normalizeMessageChannel(opts.channel);
 
   const sessionKey = resolveSessionKeyForRequest({
     cfg,
     agentId,
+    channel,
     to: opts.to,
     sessionId: opts.sessionId,
   }).sessionKey;
-
-  const channel = normalizeMessageChannel(opts.channel);
   const idempotencyKey = normalizeOptionalString(opts.runId) || randomIdempotencyKey();
   const modelOverride = normalizeOptionalString(opts.model);
   const hasModelOverride = Boolean(modelOverride);
