@@ -11,6 +11,10 @@ const nodeBin = process.execPath;
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 4096;
 const BUILD_CACHE_VERSION = 2;
 const DEFAULT_GATEWAY_LABEL = `gui/${process.getuid?.() ?? "$UID"}/ai.openclaw.gateway`;
+const DEFAULT_GATEWAY_LOG =
+  process.env.OPENCLAW_GATEWAY_LOG ?? "/Users/ai/openclaw/runtime/logs/openclaw/gateway.log";
+const DEFAULT_GATEWAY_RESTART_WAIT_TIMEOUT_MS = 90_000;
+const DEFAULT_GATEWAY_RESTART_WAIT_POLL_MS = 1_000;
 export const BUILD_ALL_STEPS = [
   { label: "plugins:assets:build", kind: "pnpm", pnpmArgs: ["plugins:assets:build"] },
   { label: "tsdown", kind: "node", args: ["scripts/tsdown-build.mjs"] },
@@ -137,6 +141,21 @@ export function resolveGatewayAutoRestartPlan(params = {}) {
   const platform = params.platform ?? process.platform;
   const launchctlCommand = params.launchctlCommand ?? "launchctl";
   const gatewayLabel = params.gatewayLabel ?? DEFAULT_GATEWAY_LABEL;
+  const gatewayLogPath = params.gatewayLogPath ?? env.OPENCLAW_GATEWAY_LOG ?? DEFAULT_GATEWAY_LOG;
+  const waitTimeoutMs =
+    params.waitTimeoutMs ??
+    Number.parseInt(
+      env.OPENCLAW_BUILD_AUTORESTART_GATEWAY_WAIT_TIMEOUT_MS ??
+        `${DEFAULT_GATEWAY_RESTART_WAIT_TIMEOUT_MS}`,
+      10,
+    );
+  const waitPollMs =
+    params.waitPollMs ??
+    Number.parseInt(
+      env.OPENCLAW_BUILD_AUTORESTART_GATEWAY_WAIT_POLL_MS ??
+        `${DEFAULT_GATEWAY_RESTART_WAIT_POLL_MS}`,
+      10,
+    );
 
   if (env.OPENCLAW_BUILD_AUTORESTART_GATEWAY === "0") {
     return { enabled: false, reason: "disabled" };
@@ -155,7 +174,99 @@ export function resolveGatewayAutoRestartPlan(params = {}) {
     launchctlCommand,
     gatewayLabel,
     args: ["kickstart", "-k", gatewayLabel],
+    gatewayLogPath,
+    waitTimeoutMs:
+      Number.isFinite(waitTimeoutMs) && waitTimeoutMs > 0
+        ? waitTimeoutMs
+        : DEFAULT_GATEWAY_RESTART_WAIT_TIMEOUT_MS,
+    waitPollMs:
+      Number.isFinite(waitPollMs) && waitPollMs > 0
+        ? waitPollMs
+        : DEFAULT_GATEWAY_RESTART_WAIT_POLL_MS,
   };
+}
+
+export function readLatestGatewayReadyTimestamp(gatewayLogPath, params = {}) {
+  const fsImpl = params.fs ?? fs;
+  let content = "";
+  try {
+    content = fsImpl.readFileSync(gatewayLogPath, "utf8");
+  } catch {
+    return undefined;
+  }
+  let latestReadyAt;
+  for (const line of content.split(/\r?\n/u)) {
+    if (!line.includes("[gateway] ready (")) {
+      continue;
+    }
+    const stamp = line.split(" [gateway] ready (", 1)[0]?.trim();
+    if (!stamp) {
+      continue;
+    }
+    const parsed = Date.parse(stamp);
+    if (Number.isFinite(parsed)) {
+      latestReadyAt = parsed;
+    }
+  }
+  return latestReadyAt;
+}
+
+export function readLatestFileMtime(rootPath, params = {}) {
+  const fsImpl = params.fs ?? fs;
+  const files = listFilesRecursively(rootPath, fsImpl);
+  let latestMtime;
+  for (const file of files) {
+    try {
+      const mtimeMs = fsImpl.statSync(file).mtimeMs;
+      if (!Number.isFinite(mtimeMs)) {
+        continue;
+      }
+      latestMtime = latestMtime === undefined ? mtimeMs : Math.max(latestMtime, mtimeMs);
+    } catch {
+      // Ignore files that disappear mid-scan.
+    }
+  }
+  return latestMtime;
+}
+
+function sleepMs(ms) {
+  if (!(ms > 0)) {
+    return;
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export function waitForGatewayAutoRestartSync(plan, params = {}) {
+  const now = params.now ?? Date.now;
+  const log = params.log ?? console.error;
+  const fsImpl = params.fs ?? fs;
+  const rootDir = params.rootDir ?? process.cwd();
+  const startAt = params.startAt ?? now();
+  const timeoutMs =
+    params.timeoutMs ?? plan.waitTimeoutMs ?? DEFAULT_GATEWAY_RESTART_WAIT_TIMEOUT_MS;
+  const pollMs = params.pollMs ?? plan.waitPollMs ?? DEFAULT_GATEWAY_RESTART_WAIT_POLL_MS;
+  const distRoot = params.distRoot ?? path.join(rootDir, "dist");
+
+  const requiredReadyAt = Math.max(
+    startAt,
+    readLatestFileMtime(distRoot, { fs: fsImpl }) ?? startAt,
+  );
+  const deadline = startAt + timeoutMs;
+
+  while (now() <= deadline) {
+    const readyAt = readLatestGatewayReadyTimestamp(plan.gatewayLogPath, { fs: fsImpl });
+    if (readyAt !== undefined && readyAt >= requiredReadyAt) {
+      return { ok: true, readyAt, requiredReadyAt };
+    }
+    sleepMs(pollMs);
+  }
+
+  const latestReadyAt = readLatestGatewayReadyTimestamp(plan.gatewayLogPath, { fs: fsImpl });
+  log(
+    `[build-all] gateway restart timed out waiting for ready >= ${new Date(requiredReadyAt).toISOString()}` +
+      ` (latest ready: ${latestReadyAt ? new Date(latestReadyAt).toISOString() : "none"})`,
+  );
+  return { ok: false, readyAt: latestReadyAt, requiredReadyAt };
 }
 
 export function resolveBuildAllSteps(profile = "full") {
@@ -417,12 +528,18 @@ if (isMainModule()) {
   const autoRestart = resolveGatewayAutoRestartPlan({ profile });
   if (autoRestart.enabled) {
     console.error(`[build-all] gateway restart (auto)`);
+    const restartStartedAt = Date.now();
     const result = spawnSync(autoRestart.launchctlCommand, autoRestart.args, {
       stdio: "inherit",
       env: process.env,
     });
     if (result.status !== 0) {
       process.exit(result.status ?? 1);
+    }
+    console.error(`[build-all] waiting for gateway ready`);
+    const waitResult = waitForGatewayAutoRestartSync(autoRestart, { startAt: restartStartedAt });
+    if (!waitResult.ok) {
+      process.exit(1);
     }
   }
 }

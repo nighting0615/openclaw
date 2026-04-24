@@ -5,11 +5,14 @@ import { describe, expect, it } from "vitest";
 import {
   BUILD_ALL_PROFILES,
   BUILD_ALL_STEPS,
+  readLatestFileMtime,
+  readLatestGatewayReadyTimestamp,
   resolveGatewayAutoRestartPlan,
   resolveBuildAllStepCacheState,
   resolveBuildAllStep,
   resolveBuildAllSteps,
   restoreBuildAllStepCacheOutputs,
+  waitForGatewayAutoRestartSync,
   writeBuildAllStepCacheStamp,
 } from "../../scripts/build-all.mjs";
 
@@ -219,6 +222,9 @@ describe("resolveBuildAllSteps", () => {
       launchctlCommand: "launchctl",
       gatewayLabel: "gui/502/ai.openclaw.gateway",
       args: ["kickstart", "-k", "gui/502/ai.openclaw.gateway"],
+      gatewayLogPath: "/Users/ai/openclaw/runtime/logs/openclaw/gateway.log",
+      waitTimeoutMs: 90000,
+      waitPollMs: 1000,
     });
   });
 
@@ -363,5 +369,97 @@ describe("resolveBuildAllStepCacheState", () => {
       expect(restoreBuildAllStepCacheOutputs(restorable, { rootDir })).toBe(true);
       expect(fs.readFileSync(outputPath, "utf8")).toBe("output");
     });
+  });
+});
+
+describe("gateway auto-restart verification", () => {
+  it("reads the latest gateway ready timestamp from the log", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-build-all-ready-log-"));
+    try {
+      const gatewayLogPath = path.join(rootDir, "gateway.log");
+      fs.writeFileSync(
+        gatewayLogPath,
+        [
+          "2026-04-24T16:45:03.642+08:00 [gateway] received SIGTERM; shutting down",
+          "2026-04-24T16:45:23.884+08:00 [gateway] ready (8 plugins: telegram; 12.2s)",
+          "2026-04-24T16:47:19.121+08:00 [telegram] sendMessage ok chat=109950863 message=8910",
+          "2026-04-24T16:48:01.002+08:00 [gateway] ready (8 plugins: telegram; 11.0s)",
+        ].join("\n"),
+      );
+
+      expect(readLatestGatewayReadyTimestamp(gatewayLogPath)).toBe(
+        Date.parse("2026-04-24T16:48:01.002+08:00"),
+      );
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("reads the latest file mtime from dist roots", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-build-all-dist-mtime-"));
+    try {
+      const firstPath = path.join(rootDir, "dist/first.js");
+      const secondPath = path.join(rootDir, "dist/nested/second.js");
+      fs.mkdirSync(path.dirname(firstPath), { recursive: true });
+      fs.mkdirSync(path.dirname(secondPath), { recursive: true });
+      fs.writeFileSync(firstPath, "first");
+      fs.writeFileSync(secondPath, "second");
+      fs.utimesSync(firstPath, new Date("2026-04-24T08:00:00Z"), new Date("2026-04-24T08:00:00Z"));
+      fs.utimesSync(secondPath, new Date("2026-04-24T08:01:00Z"), new Date("2026-04-24T08:01:00Z"));
+
+      expect(readLatestFileMtime(path.join(rootDir, "dist"))).toBe(fs.statSync(secondPath).mtimeMs);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("waits until gateway ready catches up with the latest dist output", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-build-all-sync-"));
+    try {
+      const distPath = path.join(rootDir, "dist/index.js");
+      const gatewayLogPath = path.join(rootDir, "gateway.log");
+      fs.mkdirSync(path.dirname(distPath), { recursive: true });
+      fs.writeFileSync(distPath, "dist");
+      fs.utimesSync(distPath, new Date("2026-04-24T08:00:10Z"), new Date("2026-04-24T08:00:10Z"));
+      fs.writeFileSync(
+        gatewayLogPath,
+        "2026-04-24T16:00:09.000+08:00 [gateway] ready (8 plugins: telegram; 11.0s)\n",
+      );
+
+      const ticks = [0, 500, 1_000, 1_500];
+      let tickIndex = 0;
+      const result = waitForGatewayAutoRestartSync(
+        {
+          gatewayLogPath,
+          waitTimeoutMs: 2_000,
+          waitPollMs: 1,
+        },
+        {
+          rootDir,
+          startAt: Date.parse("2026-04-24T08:00:00Z"),
+          now() {
+            const current =
+              Date.parse("2026-04-24T08:00:00Z") + ticks[Math.min(tickIndex, ticks.length - 1)];
+            tickIndex += 1;
+            if (tickIndex === 2) {
+              fs.writeFileSync(
+                gatewayLogPath,
+                "2026-04-24T16:00:11.000+08:00 [gateway] ready (8 plugins: telegram; 11.0s)\n",
+              );
+            }
+            return current;
+          },
+          log() {},
+          pollMs: 1,
+        },
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        readyAt: Date.parse("2026-04-24T16:00:11.000+08:00"),
+      });
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
   });
 });
