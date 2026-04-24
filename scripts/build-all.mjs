@@ -10,6 +10,7 @@ import { resolvePnpmRunner } from "./pnpm-runner.mjs";
 const nodeBin = process.execPath;
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 4096;
 const BUILD_CACHE_VERSION = 2;
+const DEFAULT_GATEWAY_LABEL = `gui/${process.getuid?.() ?? "$UID"}/ai.openclaw.gateway`;
 export const BUILD_ALL_STEPS = [
   { label: "plugins:assets:build", kind: "pnpm", pnpmArgs: ["plugins:assets:build"] },
   { label: "tsdown", kind: "node", args: ["scripts/tsdown-build.mjs"] },
@@ -129,6 +130,33 @@ export const BUILD_ALL_PROFILES = {
     "write-cli-compat",
   ],
 };
+
+export function resolveGatewayAutoRestartPlan(params = {}) {
+  const profile = params.profile ?? "full";
+  const env = params.env ?? process.env;
+  const platform = params.platform ?? process.platform;
+  const launchctlCommand = params.launchctlCommand ?? "launchctl";
+  const gatewayLabel = params.gatewayLabel ?? DEFAULT_GATEWAY_LABEL;
+
+  if (env.OPENCLAW_BUILD_AUTORESTART_GATEWAY === "0") {
+    return { enabled: false, reason: "disabled" };
+  }
+  if (profile !== "full") {
+    return { enabled: false, reason: "non-full-profile" };
+  }
+  if (platform !== "darwin") {
+    return { enabled: false, reason: "non-darwin" };
+  }
+  if (env.CI === "1" || env.CI === "true") {
+    return { enabled: false, reason: "ci" };
+  }
+  return {
+    enabled: true,
+    launchctlCommand,
+    gatewayLabel,
+    args: ["kickstart", "-k", gatewayLabel],
+  };
+}
 
 export function resolveBuildAllSteps(profile = "full") {
   const labels = BUILD_ALL_PROFILES[profile];
@@ -384,5 +412,17 @@ if (isMainModule()) {
       continue;
     }
     process.exit(1);
+  }
+
+  const autoRestart = resolveGatewayAutoRestartPlan({ profile });
+  if (autoRestart.enabled) {
+    console.error(`[build-all] gateway restart (auto)`);
+    const result = spawnSync(autoRestart.launchctlCommand, autoRestart.args, {
+      stdio: "inherit",
+      env: process.env,
+    });
+    if (result.status !== 0) {
+      process.exit(result.status ?? 1);
+    }
   }
 }

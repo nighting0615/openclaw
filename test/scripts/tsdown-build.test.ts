@@ -180,6 +180,21 @@ describe("resolveTsdownBuildInvocation", () => {
       fsPromises.readFile(path.join(signalSrcDir, "ambient.d.ts"), "utf8"),
     ).resolves.toBe("declare const x: string;\n");
   });
+
+  it("can preserve dist while only clearing dist-runtime", async () => {
+    const rootDir = createTempDir("openclaw-tsdown-runtime-only-clean-");
+    const distFile = path.join(rootDir, "dist", "keep.js");
+    const distRuntimeFile = path.join(rootDir, "dist-runtime", "stale.js");
+    await fsPromises.mkdir(path.dirname(distFile), { recursive: true });
+    await fsPromises.mkdir(path.dirname(distRuntimeFile), { recursive: true });
+    await fsPromises.writeFile(distFile, "keep\n");
+    await fsPromises.writeFile(distRuntimeFile, "stale\n");
+
+    cleanTsdownOutputRoots({ cwd: rootDir, roots: ["dist-runtime"] });
+
+    await expect(fsPromises.readFile(distFile, "utf8")).resolves.toBe("keep\n");
+    await expect(fsPromises.stat(path.join(rootDir, "dist-runtime"))).rejects.toThrow();
+  });
 });
 
 describe("createTsdownOutputScanner", () => {

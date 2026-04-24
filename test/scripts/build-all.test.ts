@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILD_ALL_PROFILES,
   BUILD_ALL_STEPS,
+  resolveGatewayAutoRestartPlan,
   resolveBuildAllStepCacheState,
   resolveBuildAllStep,
   resolveBuildAllSteps,
@@ -203,6 +204,45 @@ describe("resolveBuildAllSteps", () => {
 
   it("rejects unknown build profiles", () => {
     expect(() => resolveBuildAllSteps("wat")).toThrow("Unknown build profile: wat");
+  });
+
+  it("enables gateway auto-restart for local full builds on macOS", () => {
+    expect(
+      resolveGatewayAutoRestartPlan({
+        profile: "full",
+        platform: "darwin",
+        env: {},
+        gatewayLabel: "gui/502/ai.openclaw.gateway",
+      }),
+    ).toEqual({
+      enabled: true,
+      launchctlCommand: "launchctl",
+      gatewayLabel: "gui/502/ai.openclaw.gateway",
+      args: ["kickstart", "-k", "gui/502/ai.openclaw.gateway"],
+    });
+  });
+
+  it("skips gateway auto-restart outside the local full-build path", () => {
+    expect(
+      resolveGatewayAutoRestartPlan({ profile: "gatewayWatch", platform: "darwin", env: {} }),
+    ).toEqual({
+      enabled: false,
+      reason: "non-full-profile",
+    });
+    expect(resolveGatewayAutoRestartPlan({ profile: "full", platform: "linux", env: {} })).toEqual({
+      enabled: false,
+      reason: "non-darwin",
+    });
+    expect(
+      resolveGatewayAutoRestartPlan({
+        profile: "full",
+        platform: "darwin",
+        env: { OPENCLAW_BUILD_AUTORESTART_GATEWAY: "0" },
+      }),
+    ).toEqual({
+      enabled: false,
+      reason: "disabled",
+    });
   });
 });
 

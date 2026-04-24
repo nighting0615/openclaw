@@ -24,6 +24,7 @@ const TERMINATION_GRACE_MS = 5_000;
 const TSDOWN_OUTPUT_ROOTS = ["dist", "dist-runtime"];
 const GENERATED_SOURCE_DECLARATION_PATHSPEC = ":(glob)extensions/**/*.d.ts";
 const SOURCE_DECLARATION_SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"];
+const DEFAULT_SOURCE_BUILD_CLEAN_ROOTS = ["dist-runtime"];
 
 function removeDistPluginNodeModulesSymlinks(rootDir) {
   const extensionsDir = path.join(rootDir, "extensions");
@@ -58,7 +59,8 @@ function pruneStaleRuntimeSymlinks() {
 export function cleanTsdownOutputRoots(params = {}) {
   const cwd = params.cwd ?? process.cwd();
   const fsImpl = params.fs ?? fs;
-  for (const root of TSDOWN_OUTPUT_ROOTS) {
+  const roots = params.roots ?? TSDOWN_OUTPUT_ROOTS;
+  for (const root of roots) {
     const rootPath = path.join(cwd, root);
     try {
       fsImpl.rmSync(rootPath, { force: true, recursive: true });
@@ -390,7 +392,9 @@ if (isMainModule()) {
   pruneSourceCheckoutBundledPluginNodeModules();
   pruneUntrackedGeneratedSourceDeclarations();
   pruneStaleRuntimeSymlinks();
-  cleanTsdownOutputRoots();
+  // Preserve the current dist graph during source-checkout builds so a live
+  // gateway can keep serving old hashed chunks until the post-build restart.
+  cleanTsdownOutputRoots({ roots: DEFAULT_SOURCE_BUILD_CLEAN_ROOTS });
   const invocation = resolveTsdownBuildInvocation();
   const result = await runTsdownBuildInvocation(invocation);
 
