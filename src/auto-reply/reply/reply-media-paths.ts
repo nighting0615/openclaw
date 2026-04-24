@@ -22,6 +22,23 @@ const FILE_URL_RE = /^file:\/\//i;
 const WINDOWS_DRIVE_RE = /^[a-zA-Z]:[\\/]/;
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const HAS_FILE_EXT_RE = /\.\w{1,10}$/;
+const AGENT_STATE_MEDIA_DIRNAME = path.join(".openclaw", "media");
+const MANAGED_GLOBAL_MEDIA_SUBDIRS = new Set(["outbound"]);
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isManagedGlobalReplyMediaPath(candidate: string): boolean {
+  const globalMediaRoot = path.join(resolveConfigDir(), "media");
+  const relative = path.relative(path.resolve(globalMediaRoot), path.resolve(candidate));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return false;
+  }
+  const firstSegment = relative.split(path.sep)[0] ?? "";
+  return MANAGED_GLOBAL_MEDIA_SUBDIRS.has(firstSegment) || firstSegment.startsWith("tool-");
+}
 
 function isLikelyLocalMediaSource(media: string): boolean {
   return (
@@ -120,6 +137,17 @@ export function createReplyMediaPathNormalizer(params: {
     const managedMediaPath = await resolveAllowedManagedMediaPath(media);
     if (managedMediaPath) {
       return managedMediaPath;
+    }
+    const sandboxRoot = await resolveSandboxRoot();
+    if (
+      path.isAbsolute(media) &&
+      isAllowedAbsoluteReplyMediaPath({
+        candidate: media,
+        workspaceDir: params.workspaceDir,
+        sandboxRoot,
+      })
+    ) {
+      return media;
     }
     const cached = persistedMediaBySource.get(media);
     if (cached) {

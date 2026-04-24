@@ -45,12 +45,12 @@ const DREAMING_DIFF_PREFIX_RE = /@@\s*-\d+(?:,\d+)?\s+[-*+]\s+/iy;
 const inProcessShortTermLocks = new Map<string, Promise<void>>();
 const ensuredShortTermDirs = new Map<string, Promise<void>>();
 const DREAMING_NOISE_SNIPPET_PATTERNS = [
-  /write a dream diary entry from these memory fragments/i,
-  /reflections:\s*theme:/i,
-  /possible lasting truths/i,
-  /dreaming-narrative-/i,
-  /openclaw:dreaming:/i,
-  /main session:\s*read heartbeat/i,
+  /^write a dream diary entry from these memory fragments/i,
+  /^reflections:\s*theme:/i,
+  /^possible lasting truths/i,
+  /^dreaming-narrative-(?:light|rem|\d)/i,
+  /^openclaw:dreaming:/i,
+  /^main session:\s*read heartbeat/i,
 ] as const;
 
 type PromotionWeights = {
@@ -332,11 +332,12 @@ function normalizeMemoryPath(rawPath: string): string {
 }
 
 function isDreamingNoiseSnippet(snippet: string): boolean {
-  const normalized = normalizeSnippet(snippet).toLowerCase();
+  const normalized = normalizeSnippet(snippet);
   if (!normalized) {
     return false;
   }
-  return DREAMING_NOISE_SNIPPET_PATTERNS.some((pattern) => pattern.test(normalized));
+  const withoutPrefix = consumeDreamingLeadPrefix(normalized);
+  return DREAMING_NOISE_SNIPPET_PATTERNS.some((pattern) => pattern.test(withoutPrefix));
 }
 
 function isEligibleShortTermRecallTarget(pathValue: string, snippet: string): boolean {
