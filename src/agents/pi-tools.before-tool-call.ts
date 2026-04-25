@@ -29,6 +29,7 @@ import { isPlainObject } from "../utils.js";
 import { copyChannelAgentToolMeta } from "./channel-tools.js";
 import { adjustedParamsByToolCallId } from "./pi-tools.before-tool-call.state.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import { evaluateSourceChangeGuard } from "./source-change-guard.js";
 import { normalizeToolName } from "./tool-policy.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { callGatewayTool } from "./tools/gateway.js";
@@ -504,6 +505,12 @@ export async function runBeforeToolCallHook(args: {
         loopScope,
       );
     }
+  }
+
+  const sourceGuard = evaluateSourceChangeGuard({ toolName, params, cwd: args.ctx?.cwd });
+  if (sourceGuard.blocked) {
+    log.warn(`source-change-guard blocked tool=${toolName}: ${sourceGuard.reason}`);
+    return { blocked: true, reason: sourceGuard.reason };
   }
 
   const hookRunner = getGlobalHookRunner();
