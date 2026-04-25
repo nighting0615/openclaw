@@ -5325,6 +5325,38 @@ describe("runCodexAppServerAttempt", () => {
     ]);
   });
 
+  it("keeps image attachments out of app-server turn input for text-only models", async () => {
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
+    const params = createParams(
+      path.join(tempDir, "session.jsonl"),
+      path.join(tempDir, "workspace"),
+    );
+    params.model = createCodexTestModel("codex", ["text"]);
+    params.images = [
+      {
+        type: "image",
+        mimeType: "image/png",
+        data: "aW1hZ2UtYnl0ZXM=",
+      },
+    ];
+
+    const run = runCodexAppServerAttempt(params);
+    await waitForMethod("turn/start");
+    await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        {
+          method: "turn/start",
+          params: expect.objectContaining({
+            input: [{ type: "text", text: "hello", text_elements: [] }],
+          }),
+        },
+      ]),
+    );
+  });
+
   it("does not drop turn completion notifications emitted while turn/start is in flight", async () => {
     let harness: ReturnType<typeof createAppServerHarness>;
     harness = createAppServerHarness(async (method) => {

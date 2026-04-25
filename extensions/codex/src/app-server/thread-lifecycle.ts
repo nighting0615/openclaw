@@ -26,6 +26,10 @@ import {
   assertCodexThreadStartResponse,
 } from "./protocol-validators.js";
 import {
+  assertCodexThreadResumeResponse,
+  assertCodexThreadStartResponse,
+} from "./protocol-validators.js";
+import {
   isJsonObject,
   type CodexDynamicToolSpec,
   type CodexSandboxPolicy,
@@ -842,6 +846,10 @@ function buildUserInput(
   params: EmbeddedRunAttemptParams,
   promptText: string = params.prompt,
 ): CodexUserInput[] {
+  const supportsImageInput = params.model.input?.includes("image") ?? false;
+  if (!supportsImageInput) {
+    return [{ type: "text", text: promptText, text_elements: [] }];
+  }
   const imageInputs = (params.images ?? []).map((image): CodexUserInput => {
     const imageUrl = sanitizeInlineImageDataUrl(`data:${image.mimeType};base64,${image.data}`);
     return imageUrl

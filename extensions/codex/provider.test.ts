@@ -21,6 +21,11 @@ function expectStaticFallbackCatalog(
     "gpt-5.4-mini",
     "gpt-5.2",
   ]);
+  expect(result.provider.models.find((model) => model.id === "gpt-5.5")?.input).toEqual(["text"]);
+  expect(result.provider.models.find((model) => model.id === "gpt-5.4-mini")?.input).toEqual([
+    "text",
+    "image",
+  ]);
 }
 
 function createFakeCodexClient(): CodexAppServerClient {

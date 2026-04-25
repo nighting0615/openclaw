@@ -18,7 +18,10 @@ export const FALLBACK_CODEX_MODELS = [
     displayName: "gpt-5.5",
     description: "Latest frontier agentic coding model.",
     isDefault: true,
-    inputModalities: ["text", "image"],
+    // ChatGPT-account Codex currently accepts text turns for gpt-5.5, but
+    // image turns can be rejected by the backend. Keep inbound images on the
+    // OpenClaw image tool path instead of forwarding them directly.
+    inputModalities: ["text"],
     supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
   },
   {

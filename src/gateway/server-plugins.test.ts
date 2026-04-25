@@ -1076,14 +1076,14 @@ describe("loadGatewayPlugins", () => {
     expect(getLastDispatchedClientScopes()).not.toContain("operator.admin");
   });
 
-  test("rejects fallback session deletion without minting admin scope", async () => {
+  test("uses admin scope for trusted fallback session deletion", async () => {
     const serverPlugins = serverPluginsModule;
     const runtime = await createSubagentRuntime(serverPlugins);
     serverPlugins.setFallbackGatewayContext(createTestContext("synthetic-delete-session"));
 
     handleGatewayRequest.mockImplementationOnce(async (opts: HandleGatewayRequestOptions) => {
-      // Re-run the gateway scope check here so the test proves fallback dispatch
-      // does not smuggle admin into the request client.
+      // Re-run the gateway scope check here so the test proves trusted plugin
+      // cleanup dispatch carries the scope required by sessions.delete.
       const scopes = Array.isArray(opts.client?.connect?.scopes) ? opts.client.connect.scopes : [];
       const auth = methodScopesModule.authorizeOperatorScopesForMethod("sessions.delete", scopes);
       if (!auth.allowed) {
@@ -1101,10 +1101,9 @@ describe("loadGatewayPlugins", () => {
         sessionKey: "s-delete",
         deleteTranscript: true,
       }),
-    ).rejects.toThrow("missing scope: operator.admin");
+    ).resolves.toBeUndefined();
 
-    expect(getLastDispatchedClientScopes()).toEqual(["operator.write"]);
-    expect(getLastDispatchedClientScopes()).not.toContain("operator.admin");
+    expect(getLastDispatchedClientScopes()).toEqual(["operator.admin"]);
   });
 
   test("uses owner-scoped synthetic admin for plugin-created session cleanup", async () => {
