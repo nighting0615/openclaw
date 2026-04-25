@@ -47,4 +47,27 @@ describe("runBeforeToolCallHook integration with source-change-guard", () => {
     });
     expect(outcome.blocked).toBe(false);
   });
+
+  it("blocks exec redirect into protected source path", async () => {
+    const outcome = await runBeforeToolCallHook({
+      toolName: "exec",
+      params: {
+        command: "echo hi > /Users/ai/openclaw/src/openclaw/src/agents/foo.ts",
+      },
+    });
+    expect(outcome.blocked).toBe(true);
+    if (outcome.blocked) {
+      expect(outcome.reason).toMatch(/Detected write to/);
+    }
+  });
+
+  it("allows exec reading from protected source path", async () => {
+    const outcome = await runBeforeToolCallHook({
+      toolName: "exec",
+      params: {
+        command: "cat /Users/ai/openclaw/src/openclaw/src/agents/source-change-guard.ts",
+      },
+    });
+    expect(outcome.blocked).toBe(false);
+  });
 });

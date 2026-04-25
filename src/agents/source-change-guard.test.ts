@@ -109,15 +109,184 @@ describe("evaluateSourceChangeGuard", () => {
     expect(decision.blocked).toBe(false);
   });
 
-  it("allows exec (out of scope for v1; documented gap)", () => {
-    const decision = evaluateSourceChangeGuard({
-      toolName: "exec",
-      params: {
-        cmd: "echo hi > /Users/ai/openclaw/src/openclaw/src/foo.ts",
-      },
-      protectedPrefixes: PROTECTED,
+  describe("exec command guarding", () => {
+    it("blocks exec with output redirection into protected path", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "echo hi > /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+      if (decision.blocked) {
+        expect(decision.reason).toMatch(/Detected write to: /);
+      }
     });
-    expect(decision.blocked).toBe(false);
+
+    it("blocks append redirection (>>)", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "printf hello >> /Users/ai/openclaw/src/openclaw/extensions/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks tee writing to protected path", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "echo x | tee /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks cp into protected path (last arg semantics)", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "cp /tmp/x /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks mv whose destination is protected", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "mv /tmp/x /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks rm of protected path", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "rm -f /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks sed -i editing protected path", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "sed -i '' 's/a/b/' /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("blocks bash -c '...' wrapping a write into protected path", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "bash -c 'echo hi > /Users/ai/openclaw/src/openclaw/src/foo.ts'",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("normalizes bash → exec via tool alias and blocks", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "bash",
+        params: {
+          command: "echo hi > /Users/ai/openclaw/src/openclaw/src/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("resolves relative redirect targets against workdir", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "echo hi > foo.ts",
+          workdir: "/Users/ai/openclaw/src/openclaw/src/agents",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(true);
+    });
+
+    it("allows exec reading from protected path (cat)", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "cat /Users/ai/openclaw/src/openclaw/src/agents/foo.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(false);
+    });
+
+    it("allows exec listing/grepping protected path", () => {
+      const decisions = [
+        "ls /Users/ai/openclaw/src/openclaw/src/agents",
+        "grep -r 'needle' /Users/ai/openclaw/src/openclaw/src/",
+        "git -C /Users/ai/openclaw/src/openclaw status",
+        "rg --files /Users/ai/openclaw/src/openclaw/src/",
+      ].map((command) =>
+        evaluateSourceChangeGuard({
+          toolName: "exec",
+          params: { command },
+          protectedPrefixes: PROTECTED,
+        }),
+      );
+      for (const decision of decisions) {
+        expect(decision.blocked).toBe(false);
+      }
+    });
+
+    it("does not treat > inside single quotes as a redirect", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command:
+            "grep -E '>|gt' /Users/ai/openclaw/src/openclaw/src/agents/source-change-guard.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(false);
+    });
+
+    it("allows redirect into a non-protected file", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command: "echo hi > /tmp/x.txt",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(false);
+    });
+
+    it("allows cp whose destination is a workspace path even if source touches protected", () => {
+      const decision = evaluateSourceChangeGuard({
+        toolName: "exec",
+        params: {
+          command:
+            "cp /Users/ai/openclaw/src/openclaw/src/foo.ts /Users/ai/openclaw/workspaces/main/copy.ts",
+        },
+        protectedPrefixes: PROTECTED,
+      });
+      expect(decision.blocked).toBe(false);
+    });
   });
 
   it("resolves relative path against cwd before classifying", () => {
