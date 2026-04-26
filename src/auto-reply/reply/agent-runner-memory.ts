@@ -69,6 +69,21 @@ function loadPiEmbeddedRuntime(): Promise<PiEmbeddedRuntime> {
   return piEmbeddedRuntimeLoader.load();
 }
 
+// Mirror of DREAMING_SESSION_KEY_PREFIX in extensions/memory-core/src/dreaming-narrative.ts.
+// Inlined to avoid src→extensions import. Update both if the prefix changes.
+const DREAMING_NARRATIVE_SESSION_KEY_PREFIX = "dreaming-narrative-";
+
+function isDreamingNarrativeSessionKey(sessionKey: string | undefined): boolean {
+  if (!sessionKey) return false;
+  const firstSeparator = sessionKey.indexOf(":");
+  if (firstSeparator < 0) {
+    return sessionKey.startsWith(DREAMING_NARRATIVE_SESSION_KEY_PREFIX);
+  }
+  const secondSeparator = sessionKey.indexOf(":", firstSeparator + 1);
+  const sessionSegment = secondSeparator < 0 ? sessionKey : sessionKey.slice(secondSeparator + 1);
+  return sessionSegment.startsWith(DREAMING_NARRATIVE_SESSION_KEY_PREFIX);
+}
+
 async function compactEmbeddedPiSessionDefault(
   ...args: Parameters<typeof import("../../agents/pi-embedded.js").compactEmbeddedPiSession>
 ): Promise<
@@ -574,6 +589,9 @@ export async function runPreflightCompactionIfNeeded(params: {
   if (!params.sessionKey) {
     return params.sessionEntry;
   }
+  if (isDreamingNarrativeSessionKey(params.sessionKey)) {
+    return params.sessionEntry;
+  }
 
   let entry =
     params.sessionEntry ??
@@ -803,6 +821,9 @@ export async function runMemoryFlushIfNeeded(params: {
   replyOperation: ReplyOperation;
   onVisibleErrorPayloads?: (payloads: ReplyPayload[]) => void;
 }): Promise<SessionEntry | undefined> {
+  if (isDreamingNarrativeSessionKey(params.sessionKey)) {
+    return params.sessionEntry;
+  }
   const memoryFlushPlan = resolveMemoryFlushPlan({ cfg: params.cfg });
   if (!memoryFlushPlan) {
     return params.sessionEntry;
