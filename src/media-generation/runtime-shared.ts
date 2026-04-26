@@ -545,6 +545,19 @@ export function buildMediaGenerationNormalizationMetadata(params: {
   return metadata;
 }
 
+export function formatFallbackNotice(params: {
+  attempts: ReadonlyArray<FallbackAttempt> | undefined;
+  finalProvider: string;
+  finalModel: string;
+}): string | undefined {
+  const attempts = params.attempts;
+  if (!attempts || attempts.length === 0) {
+    return undefined;
+  }
+  const failedRefs = attempts.map((attempt) => `${attempt.provider}/${attempt.model} 失败`);
+  return `(fallback: ${failedRefs.join(" → ")} → ${params.finalProvider}/${params.finalModel})`;
+}
+
 export function throwCapabilityGenerationFailure(params: {
   capabilityLabel: string;
   attempts: FallbackAttempt[];

@@ -21,6 +21,7 @@ import type {
 } from "../../image-generation/types.js";
 import type { SsrFPolicy } from "../../infra/net/ssrf.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { formatFallbackNotice } from "../../media-generation/runtime-shared.js";
 import {
   resolveConfiguredMediaMaxBytes,
   resolveGeneratedMediaMaxBytes,
@@ -691,6 +692,11 @@ async function executeImageGenerationJob(params: {
   const revisedPrompts = result.images
     .map((image) => image.revisedPrompt?.trim())
     .filter((entry): entry is string => Boolean(entry));
+  const fallbackNotice = formatFallbackNotice({
+    attempts: result.attempts,
+    finalProvider: displayProvider,
+    finalModel: displayModel,
+  });
   const attachments = savedImages.map((image) => ({
     type: "image" as const,
     path: image.path,
@@ -699,6 +705,7 @@ async function executeImageGenerationJob(params: {
   }));
   const lines = [
     `Generated ${savedImages.length} image${savedImages.length === 1 ? "" : "s"} with ${displayProvider}/${displayModel}.`,
+    ...(fallbackNotice ? [fallbackNotice] : []),
     ...(warning ? [`Warning: ${warning}`] : []),
     ...formatGeneratedAttachmentLines(attachments),
   ];

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.js";
 import {
   deriveAspectRatioFromSize,
+  formatFallbackNotice,
   normalizeDurationToClosestMax,
   resolveCapabilityModelCandidates,
   resolveClosestAspectRatio,
@@ -324,5 +325,50 @@ describe("media-generation runtime shared failure summaries", () => {
     ).toThrow(
       "All music generation models failed (2): 2 fallback(s) aborted after the request was cancelled or timed out: minimax/music-2.6, minimax-portal/music-2.6",
     );
+  });
+});
+
+describe("formatFallbackNotice", () => {
+  it("returns undefined when no attempts recorded (primary succeeded first)", () => {
+    expect(
+      formatFallbackNotice({
+        attempts: [],
+        finalProvider: "openai",
+        finalModel: "gpt-image-1",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when attempts is undefined", () => {
+    expect(
+      formatFallbackNotice({
+        attempts: undefined,
+        finalProvider: "openai",
+        finalModel: "gpt-image-1",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("formats single fallback in 极简 form: failed → final", () => {
+    expect(
+      formatFallbackNotice({
+        attempts: [{ provider: "openai", model: "gpt-image-1", error: "rate limit" }],
+        finalProvider: "fal",
+        finalModel: "fal-ai/flux/dev",
+      }),
+    ).toBe("(fallback: openai/gpt-image-1 失败 → fal/fal-ai/flux/dev)");
+  });
+
+  it("chains multiple failed attempts before the final success", () => {
+    expect(
+      formatFallbackNotice({
+        attempts: [
+          { provider: "openai", model: "gpt-image-1", error: "x" },
+          { provider: "google", model: "gemini-3.1", error: "y" },
+        ],
+        finalProvider: "fal",
+        finalModel: "fal-ai/flux/dev",
+      }),
+    ).toBe("(fallback: openai/gpt-image-1 失败 → google/gemini-3.1 失败 → fal/fal-ai/flux/dev)");
   });
 });

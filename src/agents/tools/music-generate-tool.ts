@@ -3,7 +3,11 @@ import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { SsrFPolicy } from "../../infra/net/ssrf.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { resolveGeneratedMediaMaxBytes } from "../../media/configured-max-bytes.js";
+import { formatFallbackNotice } from "../../media-generation/runtime-shared.js";
+import {
+  resolveConfiguredMediaMaxBytes,
+  resolveGeneratedMediaMaxBytes,
+} from "../../media/configured-max-bytes.js";
 import {
   classifyMediaReferenceSource,
   normalizeMediaReferenceSource,
@@ -484,8 +488,14 @@ async function executeMusicGenerationJob(params: {
     mimeType: track.contentType,
     name: result.tracks[index]?.fileName,
   }));
+  const fallbackNotice = formatFallbackNotice({
+    attempts: result.attempts,
+    finalProvider: result.provider,
+    finalModel: result.model,
+  });
   const lines = [
     `Generated ${savedTracks.length} track${savedTracks.length === 1 ? "" : "s"} with ${result.provider}/${result.model}.`,
+    ...(fallbackNotice ? [fallbackNotice] : []),
     ...(warning ? [`Warning: ${warning}`] : []),
     ...(params.timeoutNormalization
       ? [
