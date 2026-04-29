@@ -203,6 +203,31 @@ describe("extractToolResultMediaPaths", () => {
     expect(extractToolResultMediaPaths(result)).toStrictEqual([]);
   });
 
+  it("ignores ![](url) markdown images embedded in scraped tool result text", () => {
+    // Regression: firecrawl_scrape / web_fetch return article markdown that
+    // contains page chrome — QR barcodes, ad banners, navigation icons — as
+    // ![](url). Those must not be queued as media to send to the user.
+    const result = {
+      content: [
+        {
+          type: "text",
+          text: [
+            "# Article title",
+            "",
+            "![](https://img02-utuku.china.com/barcode/49449/49449594.png)",
+            "",
+            "Body text here.",
+            "",
+            "![banner](https://ads.example.com/banner.png)",
+            "",
+            "MEDIA:https://example.com/explicit.png",
+          ].join("\n"),
+        },
+      ],
+    };
+    expect(extractToolResultMediaPaths(result)).toEqual(["https://example.com/explicit.png"]);
+  });
+
   it("ignores details.path when no image content exists", () => {
     // details.path without image content is not media.
     const result = {

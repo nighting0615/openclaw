@@ -436,7 +436,8 @@ async function collectEmittedToolOutputMediaUrls(
   result: unknown,
 ): Promise<string[]> {
   const { splitMediaFromOutput } = await loadMediaParse();
-  const mediaUrls = splitMediaFromOutput(outputText).mediaUrls ?? [];
+  const mediaUrls =
+    splitMediaFromOutput(outputText).mediaUrls ?? [];
   if (mediaUrls.length === 0) {
     return [];
   }
