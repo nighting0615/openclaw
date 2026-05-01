@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { readLatestAssistantTextFromSessionTranscript } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
+import { TTS_SPEED_RATIOS, type TtsSpeedPreset } from "../../plugin-sdk/tts-runtime.types.js";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
@@ -16,6 +17,7 @@ import {
   getTtsMaxLength,
   getTtsPersona,
   getTtsProvider,
+  getTtsSpeedPreset,
   isSummarizationEnabled,
   isTtsEnabled,
   isTtsProviderConfigured,
@@ -28,6 +30,7 @@ import {
   setTtsMaxLength,
   setTtsPersona,
   setTtsProvider,
+  setTtsSpeedPreset,
   textToSpeech,
 } from "../../tts/tts.js";
 import { isSilentReplyPayloadText } from "../tokens.js";
@@ -86,8 +89,11 @@ function ttsUsage(): ReplyPayload {
     text:
       `🔊 **TTS (Text-to-Speech) Help**\n\n` +
       `**Commands:**\n` +
-      `• /tts on — Enable automatic TTS for replies\n` +
+      `• /tts on — Enable TTS at normal speed (alias: /tts normal)\n` +
       `• /tts off — Disable TTS\n` +
+      `• /tts slow — Enable TTS at slow speed (${TTS_SPEED_RATIOS.slow.toFixed(2)}x)\n` +
+      `• /tts normal — Enable TTS at normal speed (${TTS_SPEED_RATIOS.normal.toFixed(2)}x)\n` +
+      `• /tts fast — Enable TTS at fast speed (${TTS_SPEED_RATIOS.fast.toFixed(2)}x)\n` +
       `• /tts status — Show current settings\n` +
       `• /tts provider [name] — View/change provider\n` +
       `• /tts persona [id|off] — View/change persona\n` +
@@ -113,6 +119,13 @@ function ttsUsage(): ReplyPayload {
 
 function hashTtsReadLatestText(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function enableWithSpeedReply(prefsPath: string, preset: TtsSpeedPreset): ReplyPayload {
+  setTtsEnabled(prefsPath, true);
+  setTtsSpeedPreset(prefsPath, preset);
+  const ratio = TTS_SPEED_RATIOS[preset].toFixed(2);
+  return { text: `🔊 TTS enabled (${preset}, ${ratio}x).` };
 }
 
 async function buildTtsAudioReply(params: {
@@ -201,9 +214,16 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
     return { shouldContinue: false, reply: ttsUsage() };
   }
 
-  if (action === "on") {
-    setTtsEnabled(prefsPath, true);
-    return { shouldContinue: false, reply: { text: "🔊 TTS enabled." } };
+  if (action === "on" || action === "normal") {
+    return { shouldContinue: false, reply: enableWithSpeedReply(prefsPath, "normal") };
+  }
+
+  if (action === "slow") {
+    return { shouldContinue: false, reply: enableWithSpeedReply(prefsPath, "slow") };
+  }
+
+  if (action === "fast") {
+    return { shouldContinue: false, reply: enableWithSpeedReply(prefsPath, "fast") };
   }
 
   if (action === "off") {
@@ -478,6 +498,8 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
     const hasKey = isTtsProviderConfigured(config, provider, params.cfg);
     const maxLength = getTtsMaxLength(prefsPath);
     const summarize = isSummarizationEnabled(prefsPath);
+    const speedPreset = getTtsSpeedPreset(prefsPath);
+    const speedRatio = TTS_SPEED_RATIOS[speedPreset].toFixed(2);
     const last = getLastTtsAttempt();
     const lines = [
       "📊 TTS status",
@@ -485,6 +507,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
       `Chat override: ${params.sessionEntry?.ttsAuto ?? "default"}`,
       `Provider: ${provider} (${hasKey ? "✅ configured" : "❌ not configured"})`,
       `Persona: ${persona?.id ?? "none"}`,
+      `Speed: ${speedPreset} (${speedRatio}x)`,
       `Text limit: ${maxLength} chars`,
       `Auto-summary: ${summarize ? "on" : "off"}`,
     ];

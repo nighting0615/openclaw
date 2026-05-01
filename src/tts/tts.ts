@@ -24,6 +24,8 @@ export {
   setTtsMaxLength,
   setTtsPersona,
   setTtsProvider,
+  setTtsSpeedPreset,
+  getTtsSpeedPreset,
   synthesizeSpeech,
   streamSpeech,
   textToSpeech,

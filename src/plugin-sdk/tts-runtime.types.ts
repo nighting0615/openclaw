@@ -14,6 +14,15 @@ export type { ResolvedTtsConfig, ResolvedTtsModelOverrides };
 export type { TtsConfigResolutionContext };
 export type { TtsDirectiveOverrides, TtsDirectiveParseResult };
 
+export type TtsSpeedPreset = "slow" | "normal" | "fast";
+export const TTS_SPEED_PRESETS: readonly TtsSpeedPreset[] = ["slow", "normal", "fast"];
+export const TTS_SPEED_RATIOS: Readonly<Record<TtsSpeedPreset, number>> = {
+  slow: 1.0,
+  normal: 1.15,
+  fast: 1.3,
+};
+export const DEFAULT_TTS_SPEED_PRESET: TtsSpeedPreset = "normal";
+
 export type TtsAttemptReasonCode =
   | "success"
   | "no_provider_registered"
@@ -246,6 +255,8 @@ export type TtsRuntimeFacade = {
   setTtsMaxLength: (prefsPath: string, maxLength: number) => void;
   setTtsPersona: (prefsPath: string, persona: string | null | undefined) => void;
   setTtsProvider: (prefsPath: string, provider: TtsProvider) => void;
+  setTtsSpeedPreset: (prefsPath: string, preset: TtsSpeedPreset) => void;
+  getTtsSpeedPreset: (prefsPath: string) => TtsSpeedPreset;
   synthesizeSpeech: (params: TtsRequestParams) => Promise<TtsSynthesisResult>;
   streamSpeech: (params: TtsRequestParams) => Promise<TtsSynthesisStreamResult>;
   textToSpeech: TextToSpeech;

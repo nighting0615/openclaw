@@ -1,4 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { resolveChannelTtsVoiceDelivery } from "openclaw/plugin-sdk/channel-targets";
 import type {
@@ -64,6 +72,16 @@ const DEFAULT_TTS_MAX_LENGTH = 1500;
 const DEFAULT_TTS_SUMMARIZE = true;
 const DEFAULT_MAX_TEXT_LENGTH = 4096;
 
+export type TtsSpeedPreset = "slow" | "normal" | "fast";
+export const TTS_SPEED_PRESETS: readonly TtsSpeedPreset[] = ["slow", "normal", "fast"];
+export const TTS_SPEED_RATIOS: Readonly<Record<TtsSpeedPreset, number>> = {
+  slow: 1.0,
+  normal: 1.15,
+  fast: 1.3,
+};
+export const DEFAULT_TTS_SPEED_PRESET: TtsSpeedPreset = "normal";
+const ATEMPO_NOOP_EPSILON = 1e-3;
+
 type TtsUserPrefs = {
   tts?: {
     auto?: TtsAutoMode;
@@ -72,6 +90,7 @@ type TtsUserPrefs = {
     persona?: string | null;
     maxLength?: number;
     summarize?: boolean;
+    speed?: TtsSpeedPreset;
   };
 };
 
@@ -786,6 +805,76 @@ export function setSummarizationEnabled(prefsPath: string, enabled: boolean): vo
   });
 }
 
+function isTtsSpeedPreset(value: unknown): value is TtsSpeedPreset {
+  return typeof value === "string" && (TTS_SPEED_PRESETS as readonly string[]).includes(value);
+}
+
+export function getTtsSpeedPreset(prefsPath: string): TtsSpeedPreset {
+  const prefs = readPrefs(prefsPath);
+  const stored = prefs.tts?.speed;
+  return isTtsSpeedPreset(stored) ? stored : DEFAULT_TTS_SPEED_PRESET;
+}
+
+export function setTtsSpeedPreset(prefsPath: string, preset: TtsSpeedPreset): void {
+  updatePrefs(prefsPath, (prefs) => {
+    prefs.tts = { ...prefs.tts, speed: preset };
+  });
+}
+
+async function applyAtempoToBuffer(
+  input: Buffer,
+  ratio: number,
+  fileExtension: string,
+): Promise<Buffer> {
+  if (!Number.isFinite(ratio) || Math.abs(ratio - 1.0) < ATEMPO_NOOP_EPSILON) {
+    return input;
+  }
+  const ext = fileExtension.startsWith(".") ? fileExtension : `.${fileExtension}`;
+  const tmpRoot = resolvePreferredOpenClawTmpDir();
+  mkdirSync(tmpRoot, { recursive: true, mode: 0o700 });
+  const tmpDir = mkdtempSync(path.join(tmpRoot, "tts-atempo-"));
+  const inPath = path.join(tmpDir, `in${ext}`);
+  const outPath = path.join(tmpDir, `out${ext}`);
+  try {
+    writeFileSync(inPath, input);
+    await new Promise<void>((resolve, reject) => {
+      const ff = spawn(
+        "ffmpeg",
+        [
+          "-y",
+          "-loglevel",
+          "error",
+          "-i",
+          inPath,
+          "-filter:a",
+          `atempo=${ratio.toFixed(3)}`,
+          outPath,
+        ],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      let stderr = "";
+      ff.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      ff.on("error", reject);
+      ff.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(0, 500)}`));
+        }
+      });
+    });
+    return readFileSync(outPath);
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 export function getLastTtsAttempt(): TtsStatusEntry | undefined {
   return lastTtsAttempt;
 }
@@ -1150,6 +1239,19 @@ export async function textToSpeech(params: {
     audioBuffer = transcoded.audioBuffer;
     fileExtension = transcoded.fileExtension;
     outputFormat = transcoded.outputFormat;
+  }
+
+  const speedPrefsPath = params.prefsPath ?? resolveTtsPrefsPath(resolveTtsConfig(params.cfg));
+  const speedPreset = getTtsSpeedPreset(speedPrefsPath);
+  const speedRatio = TTS_SPEED_RATIOS[speedPreset];
+  if (Math.abs(speedRatio - 1.0) >= ATEMPO_NOOP_EPSILON) {
+    try {
+      audioBuffer = await applyAtempoToBuffer(audioBuffer, speedRatio, fileExtension);
+    } catch (err) {
+      logVerbose(
+        `TTS: atempo (${speedPreset}=${speedRatio}) failed, using raw audio: ${formatErrorMessage(err)}`,
+      );
+    }
   }
 
   const temp = tempWorkspaceSync({

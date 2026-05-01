@@ -23,6 +23,8 @@ const ttsMocks = vi.hoisted(() => ({
   setTtsMaxLength: vi.fn(),
   setTtsPersona: vi.fn(),
   setTtsProvider: vi.fn(),
+  setTtsSpeedPreset: vi.fn(),
+  getTtsSpeedPreset: vi.fn(() => "normal"),
   textToSpeech: vi.fn(),
 }));
 

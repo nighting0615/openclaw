@@ -107,6 +107,14 @@ export const setTtsProvider: FacadeModule["setTtsProvider"] = createLazyFacadeRu
   loadFacadeModule,
   "setTtsProvider",
 );
+export const setTtsSpeedPreset: FacadeModule["setTtsSpeedPreset"] = createLazyFacadeRuntimeValue(
+  loadFacadeModule,
+  "setTtsSpeedPreset",
+);
+export const getTtsSpeedPreset: FacadeModule["getTtsSpeedPreset"] = createLazyFacadeRuntimeValue(
+  loadFacadeModule,
+  "getTtsSpeedPreset",
+);
 export const synthesizeSpeech: FacadeModule["synthesizeSpeech"] = createLazyFacadeRuntimeValue(
   loadFacadeModule,
   "synthesizeSpeech",
