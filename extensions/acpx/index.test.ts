@@ -3,10 +3,12 @@ import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import setupPlugin from "./setup-api.js";
 
-const { createAcpxRuntimeServiceMock, tryDispatchAcpReplyHookMock } = vi.hoisted(() => ({
-  createAcpxRuntimeServiceMock: vi.fn(),
-  tryDispatchAcpReplyHookMock: vi.fn(),
-}));
+const { createAcpxRuntimeServiceMock, tryDispatchAcpReplyHookMock, handleTaskCommandMock } =
+  vi.hoisted(() => ({
+    createAcpxRuntimeServiceMock: vi.fn(),
+    tryDispatchAcpReplyHookMock: vi.fn(),
+    handleTaskCommandMock: vi.fn(),
+  }));
 
 vi.mock("./register.runtime.js", () => ({
   createAcpxRuntimeService: createAcpxRuntimeServiceMock,
@@ -14,6 +16,10 @@ vi.mock("./register.runtime.js", () => ({
 
 vi.mock("openclaw/plugin-sdk/acp-runtime-backend", () => ({
   tryDispatchAcpReplyHook: tryDispatchAcpReplyHookMock,
+}));
+
+vi.mock("./src/task-command.js", () => ({
+  handleTaskCommand: handleTaskCommandMock,
 }));
 
 import plugin from "./index.js";
@@ -41,13 +47,14 @@ describe("acpx plugin", () => {
     vi.clearAllMocks();
   });
 
-  it("registers the runtime service and reply_dispatch hook", () => {
+  it("registers the runtime service, task command, and reply_dispatch hook", () => {
     const service = { id: "acpx-service", start: vi.fn() };
     createAcpxRuntimeServiceMock.mockReturnValue(service);
 
     const api = {
       pluginConfig: { stateDir: "/tmp/acpx" },
       registerService: vi.fn(),
+      registerCommand: vi.fn(),
       on: vi.fn(),
     };
 
@@ -57,6 +64,13 @@ describe("acpx plugin", () => {
       pluginConfig: api.pluginConfig,
     });
     expect(api.registerService).toHaveBeenCalledWith(service);
+    expect(api.registerCommand).toHaveBeenCalledWith({
+      name: "task",
+      description: "Manage Obsidian tasks without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      handler: handleTaskCommandMock,
+    });
     expect(api.on).toHaveBeenCalledWith("reply_dispatch", tryDispatchAcpReplyHookMock);
   });
 

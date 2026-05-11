@@ -32,6 +32,8 @@ export type {
   PluginHookReplyDispatchContext,
   PluginHookReplyDispatchEvent,
   PluginHookReplyDispatchResult,
+  PluginCommandContext,
+  PluginCommandResult,
 } from "openclaw/plugin-sdk/core";
 export type {
   WindowsSpawnProgram,
