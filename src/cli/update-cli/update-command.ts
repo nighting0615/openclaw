@@ -1447,6 +1447,7 @@ export async function updatePluginsAfterCoreUpdate(params: {
   configSnapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>;
   configChanged?: boolean;
   restoredAuthoredChannels?: unknown;
+  updateMode?: UpdateRunResult["mode"];
   opts: UpdateCommandOptions;
   timeoutMs: number;
   pluginInstallRecords?: Record<string, PluginInstallRecord>;
@@ -1675,7 +1676,11 @@ export async function updatePluginsAfterCoreUpdate(params: {
       previousInstallRecords: pluginInstallRecords,
       nextInstallRecords,
       nextConfig,
-      baseHash: process.env[POST_CORE_UPDATE_ENV] === "1" ? undefined : params.configSnapshot.hash,
+      baseHash:
+        process.env[POST_CORE_UPDATE_ENV] === "1" ||
+        (params.updateMode ? isPackageManagerUpdateMode(params.updateMode) : false)
+          ? undefined
+          : params.configSnapshot.hash,
     });
     await refreshPluginRegistryAfterConfigMutation({
       config: nextConfig,
@@ -2045,6 +2050,7 @@ async function runPostCorePluginUpdate(params: {
   configSnapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>;
   configChanged?: boolean;
   restoredAuthoredChannels?: unknown;
+  updateMode?: UpdateRunResult["mode"];
   opts: UpdateCommandOptions;
   timeoutMs: number;
   pluginInstallRecords?: Record<string, PluginInstallRecord>;
@@ -2055,6 +2061,7 @@ async function runPostCorePluginUpdate(params: {
     configSnapshot: params.configSnapshot,
     configChanged: params.configChanged,
     restoredAuthoredChannels: params.restoredAuthoredChannels,
+    updateMode: params.updateMode,
     opts: params.opts,
     timeoutMs: params.timeoutMs,
     pluginInstallRecords: params.pluginInstallRecords,
@@ -3278,6 +3285,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       configSnapshot: postUpdateConfigSnapshot,
       configChanged: restoredConfig.changed,
       restoredAuthoredChannels: restoredConfig.authoredChannels,
+      updateMode: result.mode,
       opts,
       timeoutMs: updateStepTimeoutMs,
       pluginInstallRecords: preUpdatePluginInstallRecords,
