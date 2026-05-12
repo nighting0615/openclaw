@@ -68,6 +68,7 @@ vi.mock("./backup.js", () => ({
 
 const {
   MIGRATION_SKILL_SELECTION_ACCEPT,
+  MIGRATION_SKILL_SELECTION_SKIP,
   MIGRATION_SKILL_SELECTION_TOGGLE_ALL_OFF,
   MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON,
 } = await import("./migrate/selection.js");
@@ -482,6 +483,7 @@ describe("migrateApplyCommand", () => {
     expect(selectionPrompt.required).toBe(false);
     expect(selectionPrompt.options?.map(({ label, value }) => ({ label, value }))).toStrictEqual([
       { value: MIGRATION_SKILL_SELECTION_ACCEPT, label: "Accept recommended" },
+      { value: MIGRATION_SKILL_SELECTION_SKIP, label: "Skip for now" },
       { value: "skill:alpha", label: "alpha" },
       { value: "skill:beta", label: "beta" },
       { value: MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON, label: "Toggle all on" },
@@ -542,6 +544,7 @@ describe("migrateApplyCommand", () => {
     expect(pluginPrompt.required).toBe(false);
     expect(pluginPrompt.options?.map(({ label, value }) => ({ label, value }))).toStrictEqual([
       { value: MIGRATION_SKILL_SELECTION_ACCEPT, label: "Accept recommended" },
+      { value: MIGRATION_SKILL_SELECTION_SKIP, label: "Skip for now" },
       { value: "plugin:google-calendar", label: "google-calendar" },
       { value: "plugin:gmail", label: "gmail" },
       { value: MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON, label: "Toggle all on" },

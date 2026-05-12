@@ -8,11 +8,15 @@ export const MIGRATION_PLUGIN_NOT_SELECTED_REASON = "not selected for migration"
 export const MIGRATION_SELECTION_ACCEPT = "__openclaw_migrate_accept_recommended__";
 export const MIGRATION_SELECTION_TOGGLE_ALL_ON = "__openclaw_migrate_toggle_all_on__";
 export const MIGRATION_SELECTION_TOGGLE_ALL_OFF = "__openclaw_migrate_toggle_all_off__";
+export const MIGRATION_SELECTION_SKIP = "__openclaw_migrate_skip_for_now__";
 export const MIGRATION_SKILL_SELECTION_ACCEPT = MIGRATION_SELECTION_ACCEPT;
 export const MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON = MIGRATION_SELECTION_TOGGLE_ALL_ON;
 export const MIGRATION_SKILL_SELECTION_TOGGLE_ALL_OFF = MIGRATION_SELECTION_TOGGLE_ALL_OFF;
+export const MIGRATION_SKILL_SELECTION_SKIP = MIGRATION_SELECTION_SKIP;
 
-type InteractiveMigrationSelection = { action: "select"; selectedItemIds: Set<string> };
+type InteractiveMigrationSelection =
+  | { action: "skip" }
+  | { action: "select"; selectedItemIds: Set<string> };
 export type InteractiveMigrationSkillSelection = InteractiveMigrationSelection;
 export type InteractiveMigrationPluginSelection = InteractiveMigrationSelection;
 
@@ -420,6 +424,9 @@ function resolveInteractiveMigrationSelection(
   }
 
   const selectedValueSet = new Set(selectedValues);
+  if (selectedValueSet.has(MIGRATION_SELECTION_SKIP)) {
+    return { action: "skip" };
+  }
   if (selectedValueSet.has(MIGRATION_SELECTION_TOGGLE_ALL_OFF)) {
     return { action: "select", selectedItemIds: new Set() };
   }
@@ -485,6 +492,9 @@ export function reconcileInteractiveMigrationEnterValues(
   selectableValues: readonly string[],
   opts: { preserveDeselectedActivatedValue?: boolean } = {},
 ): string[] {
+  if (activatedValue === MIGRATION_SELECTION_SKIP) {
+    return [MIGRATION_SELECTION_SKIP];
+  }
   if (activatedValue === MIGRATION_SELECTION_TOGGLE_ALL_ON) {
     return [MIGRATION_SELECTION_TOGGLE_ALL_ON, ...selectableValues];
   }
@@ -494,7 +504,9 @@ export function reconcileInteractiveMigrationEnterValues(
   if (activatedValue !== undefined && selectableValues.includes(activatedValue)) {
     const selectedSelectableValues = selectedValues.filter(
       (value) =>
-        value !== MIGRATION_SELECTION_TOGGLE_ALL_ON && value !== MIGRATION_SELECTION_TOGGLE_ALL_OFF,
+        value !== MIGRATION_SELECTION_TOGGLE_ALL_ON &&
+        value !== MIGRATION_SELECTION_TOGGLE_ALL_OFF &&
+        value !== MIGRATION_SELECTION_SKIP,
     );
     if (opts.preserveDeselectedActivatedValue && !selectedValues.includes(activatedValue)) {
       return selectedSelectableValues;

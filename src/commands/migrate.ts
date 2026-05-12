@@ -31,6 +31,7 @@ import {
   getSelectableMigrationPluginItems,
   getSelectableMigrationSkillItems,
   MIGRATION_SELECTION_ACCEPT,
+  MIGRATION_SELECTION_SKIP,
   MIGRATION_SELECTION_TOGGLE_ALL_OFF,
   MIGRATION_SELECTION_TOGGLE_ALL_ON,
   resolveInteractiveMigrationPluginSelection,
@@ -104,6 +105,10 @@ async function promptCodexMigrationSkillSelection(
         label: "Accept recommended",
         hint: "Migrate every recommended skill",
       },
+      {
+        value: MIGRATION_SELECTION_SKIP,
+        label: "Skip for now",
+      },
       ...skillItems.map((item) => {
         const hint = formatMigrationSkillSelectionHint(item);
         return {
@@ -132,6 +137,10 @@ async function promptCodexMigrationSkillSelection(
     return null;
   }
   const selection = resolveInteractiveMigrationSkillSelection(skillItems, selected ?? []);
+  if (selection.action === "skip") {
+    runtime.log("Codex skill migration skipped for now.");
+    return applyMigrationSelectedSkillItemIds(plan, new Set());
+  }
   const selectedPlan = applyMigrationSelectedSkillItemIds(plan, selection.selectedItemIds);
   runtime.log(
     `Selected ${selection.selectedItemIds.size} of ${skillItems.length} Codex skills for migration.`,
@@ -165,6 +174,10 @@ async function promptCodexMigrationPluginSelection(
         label: "Accept recommended",
         hint: "Migrate every recommended plugin",
       },
+      {
+        value: MIGRATION_SELECTION_SKIP,
+        label: "Skip for now",
+      },
       ...pluginItems.map((item) => {
         const hint = formatMigrationPluginSelectionHint(item);
         return {
@@ -193,6 +206,10 @@ async function promptCodexMigrationPluginSelection(
     return null;
   }
   const selection = resolveInteractiveMigrationPluginSelection(pluginItems, selected ?? []);
+  if (selection.action === "skip") {
+    runtime.log("Codex plugin migration skipped for now.");
+    return null;
+  }
   const selectedPlan = applyMigrationSelectedPluginItemIds(plan, selection.selectedItemIds);
   runtime.log(
     `Selected ${selection.selectedItemIds.size} of ${pluginItems.length} native Codex plugins for activation.`,

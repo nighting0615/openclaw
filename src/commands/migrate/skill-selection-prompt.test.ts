@@ -2,6 +2,7 @@ import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
   MIGRATION_SKILL_SELECTION_ACCEPT,
+  MIGRATION_SKILL_SELECTION_SKIP,
   MIGRATION_SKILL_SELECTION_TOGGLE_ALL_OFF,
   MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON,
 } from "./selection.js";
@@ -30,6 +31,7 @@ async function runPromptWithKeys(params: {
     message: "Select Codex skills",
     options: [
       { value: MIGRATION_SKILL_SELECTION_ACCEPT, label: "Accept recommended" },
+      { value: MIGRATION_SKILL_SELECTION_SKIP, label: "Skip for now" },
       { value: "skill:alpha", label: "alpha" },
       { value: "skill:beta", label: "beta" },
       { value: MIGRATION_SKILL_SELECTION_TOGGLE_ALL_ON, label: "Toggle all on" },
@@ -70,6 +72,15 @@ async function runPromptWithReturn(params: {
 }
 
 describe("promptMigrationSkillSelectionValues", () => {
+  it("activates Skip for now before submitting with return", async () => {
+    await expect(
+      runPromptWithReturn({
+        cursorAt: MIGRATION_SKILL_SELECTION_SKIP,
+        initialValues: ["skill:alpha", "skill:beta"],
+      }),
+    ).resolves.toEqual([MIGRATION_SKILL_SELECTION_SKIP]);
+  });
+
   it("keeps the cursor item selected when submitting with return", async () => {
     await expect(
       runPromptWithReturn({

@@ -131,16 +131,18 @@ subprocesses can find user-home config and tokens.
 Running `openclaw migrate codex` in an interactive terminal previews the full
 plan, then opens checkbox selectors before the final apply confirmation. Skill
 copy items are prompted first. Use `Toggle all on` or `Toggle all off` for bulk
-selection. Press Space to toggle rows, or press Enter to activate the highlighted
-row and continue. Planned skills start checked, conflict skills start unchecked, and
+selection. `Accept recommended` submits the initially checked recommended set.
+Press Space to toggle rows, or press Enter to activate the highlighted row and
+continue. Planned skills start checked, conflict skills start unchecked, and
 `Skip for now` skips skill copies for this run while still continuing to plugin
 selection. When source-installed curated Codex plugins are migratable and
 `--plugin` was not supplied, migration then prompts for native Codex plugin
 activation by plugin name. Plugin items
 start checked unless the target OpenClaw Codex plugin config already has that
 plugin. Existing target plugins start unchecked and show a conflict hint such as
-`conflict: plugin exists`; choose `Toggle all off` to migrate no native Codex
-plugins in that run, or `Skip for now` to stop before applying. For scripted or
+`conflict: plugin exists`; choose `Accept recommended` for the initially checked
+plugin set, `Toggle all off` to migrate no native Codex plugins in that run, or
+`Skip for now` to stop before applying. For scripted or
 exact runs, pass `--skill <name>` once per skill, for example:
 
 ```bash
