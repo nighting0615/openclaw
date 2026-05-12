@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -37,18 +38,74 @@ async function addCompileCacheProbe(fixtureRoot: string): Promise<void> {
   );
 }
 
-async function waitForJsonFile<T>(filePath: string, timeoutMs: number): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
-  while (Date.now() <= deadline) {
-    try {
-      return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+function isJsonContent(content: string): boolean {
+  try {
+    JSON.parse(content);
+    return true;
+  } catch {
+    return false;
   }
-  throw new Error(`timed out waiting for parseable JSON in ${filePath}`, { cause: lastError });
+}
+
+async function waitForFile(
+  filePath: string,
+  timeoutMs: number,
+  isReady: (content: string) => boolean = () => true,
+): Promise<string> {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    if (isReady(content)) {
+      return content;
+    }
+  } catch {
+    // Wait below.
+  }
+
+  const signal = AbortSignal.timeout(timeoutMs);
+  return await new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let watcher: ReturnType<typeof watch> | undefined;
+    const fileName = path.basename(filePath);
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      watcher?.close();
+    };
+    const tryRead = async () => {
+      if (settled) {
+        return;
+      }
+      try {
+        const content = await fs.readFile(filePath, "utf8");
+        if (!isReady(content)) {
+          setTimeout(() => void tryRead(), 10);
+          return;
+        }
+        cleanup();
+        resolve(content);
+      } catch {
+        // Keep watching until the deadline aborts.
+      }
+    };
+
+    signal.addEventListener(
+      "abort",
+      () => {
+        cleanup();
+        reject(new Error(`timed out waiting for ${filePath}`));
+      },
+      { once: true },
+    );
+    watcher = watch(path.dirname(filePath), { signal }, (_event, changedFileName) => {
+      if (!changedFileName || changedFileName.toString() === fileName) {
+        void tryRead();
+      }
+    });
+    void tryRead();
+  });
 }
 
 async function waitForProcessExit(
@@ -240,7 +297,9 @@ describe("openclaw launcher", () => {
       let respawnChildPid: number | undefined;
 
       try {
-        const childInfo = await waitForJsonFile<{ pid: number }>(childInfoPath, 5000);
+        const childInfo = JSON.parse(await waitForFile(childInfoPath, 5000, isJsonContent)) as {
+          pid: number;
+        };
         respawnChildPid = childInfo.pid;
 
         launcher.kill("SIGTERM");
@@ -291,7 +350,9 @@ describe("openclaw launcher", () => {
       let respawnChildPid: number | undefined;
 
       try {
-        const childInfo = await waitForJsonFile<{ pid: number }>(childInfoPath, 5000);
+        const childInfo = JSON.parse(await waitForFile(childInfoPath, 5000, isJsonContent)) as {
+          pid: number;
+        };
         respawnChildPid = childInfo.pid;
 
         launcher.kill("SIGTERM");

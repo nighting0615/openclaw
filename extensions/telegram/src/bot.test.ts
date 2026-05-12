@@ -1266,6 +1266,7 @@ describe("createTelegramBot", () => {
       ]),
     });
 
+    const storePath = `/tmp/openclaw-telegram-model-display-names-${process.pid}-${Date.now()}.json`;
     const config = {
       agents: {
         defaults: {
@@ -1278,8 +1279,12 @@ describe("createTelegramBot", () => {
           allowFrom: ["*"],
         },
       },
+      session: {
+        store: storePath,
+      },
     } satisfies NonNullable<Parameters<typeof createTelegramBot>[0]["config"]>;
 
+    await rm(storePath, { force: true });
     loadConfig.mockReturnValue(config);
     createTelegramBot({
       token: "tok",
@@ -1324,6 +1329,7 @@ describe("createTelegramBot", () => {
       [{ text: "<< Back", callback_data: "mdl_back" }],
     ]);
     expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-model-display-names-1");
+    await rm(storePath, { force: true });
   });
 
   it("resets overrides when selecting the configured default model", async () => {
