@@ -35,6 +35,7 @@ minimumReleaseAgeExclude:
   - "@typescript/native-preview*"
   - "@types/node"
   - "@rolldown/*"
+  - "oxlint"
   - "@oxlint/*"
   - "@oxfmt/*"
   - "oxfmt"
