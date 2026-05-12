@@ -478,23 +478,17 @@ function isBundledCodexPluginModulePath(params: { packageRoot: string; modulePat
   );
 }
 
-function isOfficialInstalledCodexPluginPackageRoot(packageRoot: string) {
-  const segments = path.resolve(packageRoot).split(path.sep).filter(Boolean);
-  const last = segments.at(-1);
-  const scope = segments.at(-2);
-  const nodeModules = segments.at(-3);
-  return last === "codex" && scope === "@openclaw" && nodeModules === "node_modules";
-}
-
-function isOfficialInstalledCodexPluginModulePath(params: { modulePath: string }) {
+function isModulePathInsidePackageNamed(params: {
+  modulePath: string;
+  packageName: string;
+  maxDepth?: number;
+}) {
   let cursor = path.dirname(path.resolve(params.modulePath));
-  for (let depth = 0; depth < 12; depth += 1) {
-    const packageJson = tryReadJsonSync<{ name?: unknown }>(path.join(cursor, "package.json"));
-    if (packageJson) {
-      return (
-        packageJson.name === OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME &&
-        isOfficialInstalledCodexPluginPackageRoot(cursor)
-      );
+  const maxDepth = params.maxDepth ?? 12;
+  for (let i = 0; i < maxDepth; i += 1) {
+    const parsed = tryReadJsonSync<{ name?: unknown }>(path.join(cursor, "package.json"));
+    if (parsed && typeof parsed.name === "string") {
+      return parsed.name.trim() === params.packageName;
     }
     const parent = path.dirname(cursor);
     if (parent === cursor) {
@@ -505,10 +499,35 @@ function isOfficialInstalledCodexPluginModulePath(params: { modulePath: string }
   return false;
 }
 
+function isModulePathInsideNodeModulesPackage(params: { modulePath: string; packageName: string }) {
+  const packageSegments = params.packageName.split("/");
+  if (packageSegments.length === 0 || packageSegments.some((segment) => segment.length === 0)) {
+    return false;
+  }
+  const pathSegments = path.resolve(params.modulePath).split(path.sep);
+  const nodeModulesIndex = pathSegments.lastIndexOf("node_modules");
+  if (nodeModulesIndex < 0) {
+    return false;
+  }
+  const packageStart = nodeModulesIndex + 1;
+  const packageEnd = packageStart + packageSegments.length;
+  if (pathSegments.length <= packageEnd) {
+    return false;
+  }
+  return packageSegments.every((segment, index) => pathSegments[packageStart + index] === segment);
+}
+
 function isTrustedCodexPluginModulePath(params: { packageRoot: string; modulePath: string }) {
   return (
     isBundledCodexPluginModulePath(params) ||
-    isOfficialInstalledCodexPluginModulePath({ modulePath: params.modulePath })
+    isModulePathInsideNodeModulesPackage({
+      modulePath: params.modulePath,
+      packageName: "@openclaw/codex",
+    }) ||
+    isModulePathInsidePackageNamed({
+      modulePath: params.modulePath,
+      packageName: "@openclaw/codex",
+    })
   );
 }
 
