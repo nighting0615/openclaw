@@ -3,7 +3,6 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createPluginRecord } from "./loader-records.js";
 import { createPluginRegistry } from "./registry.js";
 import { getPluginRuntimeGatewayRequestScope } from "./runtime/gateway-request-scope.js";
-import { createPluginRuntime } from "./runtime/index.js";
 import type { PluginRuntime } from "./runtime/types.js";
 
 function createTestRegistry(runtime: PluginRuntime) {
@@ -61,9 +60,9 @@ describe("plugin registry runtime config scope", () => {
         writeScope = getPluginRuntimeGatewayRequestScope();
       }),
     } satisfies PluginRuntime["config"];
-    const runtime = createPluginRuntime();
-    runtime.config = configRuntime;
-    const pluginRegistry = createTestRegistry(runtime);
+    const pluginRegistry = createTestRegistry({
+      config: configRuntime,
+    } as unknown as PluginRuntime);
     const record = createPluginRecord({
       id: "legacy-plugin",
       name: "Legacy Plugin",
