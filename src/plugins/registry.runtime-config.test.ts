@@ -24,6 +24,8 @@ describe("plugin registry runtime config scope", () => {
     let currentScope = getPluginRuntimeGatewayRequestScope();
     let mutateScope = getPluginRuntimeGatewayRequestScope();
     let replaceScope = getPluginRuntimeGatewayRequestScope();
+    let loadScope = getPluginRuntimeGatewayRequestScope();
+    let writeScope = getPluginRuntimeGatewayRequestScope();
     const config = {} as OpenClawConfig;
     const replaceResult = {
       path: "/tmp/openclaw.json",
@@ -46,8 +48,6 @@ describe("plugin registry runtime config scope", () => {
       replaceScope = getPluginRuntimeGatewayRequestScope();
       return replaceResult;
     };
-    const loadConfig: PluginRuntime["config"]["loadConfig"] = () => config;
-    const writeConfigFile: PluginRuntime["config"]["writeConfigFile"] = async () => {};
     const configRuntime = {
       current: vi.fn(() => {
         currentScope = getPluginRuntimeGatewayRequestScope();
@@ -55,8 +55,13 @@ describe("plugin registry runtime config scope", () => {
       }),
       mutateConfigFile,
       replaceConfigFile,
-      loadConfig,
-      writeConfigFile,
+      loadConfig: vi.fn(() => {
+        loadScope = getPluginRuntimeGatewayRequestScope();
+        return config;
+      }),
+      writeConfigFile: vi.fn(async () => {
+        writeScope = getPluginRuntimeGatewayRequestScope();
+      }),
     } satisfies PluginRuntime["config"];
     const runtime = createPluginRuntime();
     runtime.config = configRuntime;
@@ -80,6 +85,8 @@ describe("plugin registry runtime config scope", () => {
       nextConfig: config,
       afterWrite: { mode: "none", reason: "test" },
     });
+    expect(api.runtime.config.loadConfig()).toBe(config);
+    await api.runtime.config.writeConfigFile(config);
 
     expect(currentScope).toMatchObject({
       pluginId: "legacy-plugin",
@@ -90,6 +97,14 @@ describe("plugin registry runtime config scope", () => {
       pluginSource: "/plugins/legacy-plugin/index.js",
     });
     expect(replaceScope).toMatchObject({
+      pluginId: "legacy-plugin",
+      pluginSource: "/plugins/legacy-plugin/index.js",
+    });
+    expect(loadScope).toMatchObject({
+      pluginId: "legacy-plugin",
+      pluginSource: "/plugins/legacy-plugin/index.js",
+    });
+    expect(writeScope).toMatchObject({
       pluginId: "legacy-plugin",
       pluginSource: "/plugins/legacy-plugin/index.js",
     });

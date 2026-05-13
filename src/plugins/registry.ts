@@ -2438,6 +2438,9 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
             mutateConfigFile: (params) => runWithPluginScope(() => config.mutateConfigFile(params)),
             replaceConfigFile: (params) =>
               runWithPluginScope(() => config.replaceConfigFile(params)),
+            loadConfig: () => runWithPluginScope(() => config.loadConfig()),
+            writeConfigFile: (cfg, options) =>
+              runWithPluginScope(() => config.writeConfigFile(cfg, options)),
           } satisfies PluginRuntime["config"];
         }
         if (prop === "llm") {
