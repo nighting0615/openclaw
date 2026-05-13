@@ -111,7 +111,7 @@ jobs:
     name: Run package Telegram E2E
     runs-on: blacksmith-32vcpu-ubuntu-2404
     continue-on-error: ${{ inputs.advisory }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment: qa-live-shared
     permissions:
       actions: read
