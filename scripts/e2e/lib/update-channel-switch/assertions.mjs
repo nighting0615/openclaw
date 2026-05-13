@@ -94,6 +94,13 @@ function writeWorkspacePnpmConfig(file, keptPatches) {
     lines[minimumReleaseAgeIndex] = "minimumReleaseAge: 0";
   }
 
+  const resolutionModeIndex = lines.findIndex((line) => /^resolutionMode:\s*/.test(line));
+  if (resolutionModeIndex === -1) {
+    lines.push("resolutionMode: highest");
+  } else {
+    lines[resolutionModeIndex] = "resolutionMode: highest";
+  }
+
   fs.writeFileSync(file, `${lines.join("\n")}${hadTrailingNewline ? "\n" : ""}`);
 }
 
@@ -136,6 +143,7 @@ function prepareGitFixture(root) {
   } else {
     pnpmConfig.allowUnusedPatches = true;
     pnpmConfig.minimumReleaseAge = 0;
+    pnpmConfig.resolutionMode = "highest";
     if (Object.keys(keptPatches).length > 0) {
       pnpmConfig.patchedDependencies = keptPatches;
     } else {
