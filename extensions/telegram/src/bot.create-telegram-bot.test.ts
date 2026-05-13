@@ -504,21 +504,36 @@ describe("createTelegramBot", () => {
 
   it("keeps ordinary Telegram messages serialized within the same topic", async () => {
     installPerKeySequentializer();
+    createTelegramBot({ token: "tok" });
+    const sequentializer = requireValue(
+      sequentializeSpy.mock.results[0]?.value as TelegramMiddleware | undefined,
+      "telegram sequentializer",
+    );
+
     const events: string[] = [];
-    let releaseFirstTurn!: () => void;
+    let releaseFirstTurn: (() => void) | undefined;
     const firstTurnGate = new Promise<void>((resolve) => {
       releaseFirstTurn = resolve;
     });
 
-    createTelegramBot({ token: "tok" });
-    const sequentializer = sequentializeSpy.mock.results[0]?.value as
-      | TelegramMiddleware
-      | undefined;
-    if (!sequentializer) {
-      throw new Error("Expected sequentialize middleware");
-    }
-    const firstCtx = makeForumGroupMessageCtx({ threadId: 99, text: "first message" });
-    const secondCtx = makeForumGroupMessageCtx({ threadId: 99, text: "second message" });
+    const firstBaseCtx = makeForumGroupMessageCtx({ threadId: 99, text: "first message" });
+    const secondBaseCtx = makeForumGroupMessageCtx({ threadId: 99, text: "second message" });
+    const firstCtx = {
+      ...firstBaseCtx,
+      message: {
+        ...firstBaseCtx.message,
+        message_id: 201,
+      },
+      update: { update_id: 201 },
+    };
+    const secondCtx = {
+      ...secondBaseCtx,
+      message: {
+        ...secondBaseCtx.message,
+        message_id: 202,
+      },
+      update: { update_id: 202 },
+    };
 
     const firstPromise = sequentializer(firstCtx, async () => {
       events.push("first:start");
@@ -533,8 +548,12 @@ describe("createTelegramBot", () => {
       events.push("second");
     });
 
-    await flushTelegramTestMicrotasks();
+    await Promise.resolve();
     expect(events).toEqual(["first:start"]);
+
+    if (!releaseFirstTurn) {
+      throw new Error("Expected first Telegram turn release callback to be initialized");
+    }
 
     releaseFirstTurn();
     await Promise.all([firstPromise, secondPromise]);
