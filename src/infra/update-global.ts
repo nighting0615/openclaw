@@ -43,6 +43,10 @@ const GLOBAL_RENAME_PREFIX = ".";
 export const OPENCLAW_MAIN_PACKAGE_SPEC = "github:openclaw/openclaw#main";
 const COREPACK_ENABLE_DOWNLOAD_PROMPT_DEFAULT = "0";
 const NPM_GLOBAL_INSTALL_QUIET_FLAGS = ["--no-fund", "--no-audit", "--loglevel=error"] as const;
+const NPM_GLOBAL_INSTALL_OMIT_OPTIONAL_FLAGS = [
+  "--omit=optional",
+  ...NPM_GLOBAL_INSTALL_QUIET_FLAGS,
+] as const;
 const PNPM_OPENCLAW_BUILD_ALLOWLIST_FLAG = `--allow-build=${PRIMARY_PACKAGE_NAME}`;
 const FIRST_PACKAGED_DIST_INVENTORY_VERSION = { major: 2026, minor: 4, patch: 15 };
 const OMITTED_PRIVATE_QA_BUNDLED_PLUGIN_ROOTS = new Set([
@@ -813,8 +817,7 @@ export function globalInstallFallbackArgs(
     "-g",
     ...(installPrefix ? ["--prefix", installPrefix] : []),
     spec,
-    "--omit=optional",
-    ...NPM_GLOBAL_INSTALL_QUIET_FLAGS,
+    ...NPM_GLOBAL_INSTALL_OMIT_OPTIONAL_FLAGS,
     ...createNpmFreshnessBypassArgs(),
   ];
 }
