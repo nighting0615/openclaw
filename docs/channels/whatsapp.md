@@ -18,7 +18,8 @@ Status: production-ready via WhatsApp Web (Baileys). Gateway owns linked session
   first, with npm as the fallback.
 - The WhatsApp runtime is distributed outside the core OpenClaw npm package so
   WhatsApp-specific runtime dependencies stay with the external plugin,
-  including Baileys' libsignal dependency chain.
+  including Baileys' libsignal dependency chain and optional audio decoding
+  helpers.
 
 Manual install stays available:
 
