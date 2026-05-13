@@ -66,6 +66,7 @@ const AGENT_MEDIATED_COMPLETION_TOOLS = new Set([
 ]);
 
 type SubagentAnnounceDeliveryDeps = {
+  callGateway: typeof callGateway;
   dispatchGatewayMethodInProcess: typeof dispatchGatewayMethodInProcess;
   getRuntimeConfig: typeof getRuntimeConfig;
   getRequesterSessionActivity: (requesterSessionKey: string) => {
@@ -80,6 +81,7 @@ type SubagentAnnounceDeliveryDeps = {
 };
 
 const defaultSubagentAnnounceDeliveryDeps: SubagentAnnounceDeliveryDeps = {
+  callGateway,
   dispatchGatewayMethodInProcess,
   getRuntimeConfig,
   getRequesterSessionActivity: (requesterSessionKey: string) => {
