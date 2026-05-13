@@ -390,6 +390,13 @@ function resolvePackageManifestTraversalLimits(): PackageManifestTraversalLimits
   };
 }
 
+function resolveInstalledPackageCodeScanMaxFiles(): number {
+  return readPositiveIntegerEnv(
+    "OPENCLAW_INSTALL_SCAN_MAX_CODE_FILES",
+    DEFAULT_INSTALLED_PACKAGE_CODE_SCAN_MAX_FILES,
+  );
+}
+
 function isSamePathOrInside(parentPath: string, candidatePath: string): boolean {
   return parentPath === candidatePath || isPathInside(parentPath, candidatePath);
 }
@@ -1269,8 +1276,8 @@ export async function scanInstalledPackageDependencyTreeRuntime(params: {
     dependencyScanRootDir: params.dependencyScanRootDir,
     packageDir: params.packageDir,
   });
-  const manifestScanRoots = await collectNonOverlappingPackageScanRoots(scanRoots);
-  for (const packageDir of manifestScanRoots) {
+  const directoryScanRoots = await collectNonOverlappingPackageScanRoots(scanRoots);
+  for (const packageDir of directoryScanRoots) {
     const dependencyBlocked = await scanManifestDependencyDenylist({
       logger: params.logger,
       packageDir,
@@ -1283,6 +1290,50 @@ export async function scanInstalledPackageDependencyTreeRuntime(params: {
     }
   }
 
+  let remainingMaxFiles = resolveInstalledPackageCodeScanMaxFiles();
+  const pluginRootRealPath = await fs
+    .realpath(params.packageDir)
+    .catch(() => path.resolve(params.packageDir));
+  for (const packageDir of directoryScanRoots) {
+    if (remainingMaxFiles <= 0) {
+      return resolveBuiltinScanDecision({
+        builtinScan: buildBuiltinScanFromError(
+          "code safety scan reached file limit (configured limit)",
+        ),
+        logger: params.logger,
+        dangerouslyForceUnsafeInstall: params.dangerouslyForceUnsafeInstall,
+        trustedSourceLinkedOfficialInstall: params.trustedSourceLinkedOfficialInstall,
+        targetLabel: `Plugin "${params.pluginId}" installation`,
+      });
+    }
+    const packageRealPath = await fs.realpath(packageDir).catch(() => path.resolve(packageDir));
+    const isPluginRoot = packageRealPath === pluginRootRealPath;
+    const builtinScan = await scanDirectoryTarget({
+      excludeTestFiles: isPluginRoot,
+      failOnTruncated: true,
+      includeHiddenDirectories: true,
+      includeNestedNodeModulesTestFiles: isPluginRoot,
+      includeNodeModules: true,
+      logger: params.logger,
+      maxFiles: remainingMaxFiles,
+      path: packageDir,
+      suppressBuiltinWarnings: params.trustedSourceLinkedOfficialInstall === true,
+      suspiciousMessage: `Plugin "{target}" installed tree has {count} suspicious code pattern(s). Run "openclaw security audit --deep" for details.`,
+      targetName: params.pluginId,
+      warningMessage: `WARNING: Plugin "${params.pluginId}" installed tree contains dangerous code patterns`,
+    });
+    const builtinBlocked = resolveBuiltinScanDecision({
+      builtinScan,
+      logger: params.logger,
+      dangerouslyForceUnsafeInstall: params.dangerouslyForceUnsafeInstall,
+      trustedSourceLinkedOfficialInstall: params.trustedSourceLinkedOfficialInstall,
+      targetLabel: `Plugin "${params.pluginId}" installation`,
+    });
+    if (builtinBlocked) {
+      return builtinBlocked;
+    }
+    remainingMaxFiles -= builtinScan.scannedFiles;
+  }
   return undefined;
 }
 

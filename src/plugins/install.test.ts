@@ -3292,7 +3292,7 @@ describe("installPluginFromDir", () => {
     expect(warnings).toStrictEqual([]);
   });
 
-  it("ignores installed managed npm peer dependency code during install-time code scans", async () => {
+  it("scans installed managed npm peer dependency code during install-time code scans", async () => {
     const caseDir = suiteTempRootTracker.makeTempDir();
     const npmRoot = path.join(caseDir, "npm-root");
     const pluginDir = path.join(npmRoot, "node_modules", "managed-plugin-with-peer");
@@ -3334,14 +3334,14 @@ describe("installPluginFromDir", () => {
       logger: { info: () => {}, warn: (msg: string) => warnings.push(msg) },
     });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pluginId).toBe("managed-plugin-with-peer");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
+      expect(result.error).toContain("peer-runtime-helper/index.cjs");
     }
-    expect(warnings).toStrictEqual([]);
   });
 
-  it("ignores installed dependency runtime entrypoints with test-like paths", async () => {
+  it("scans installed dependency runtime entrypoints with test-like paths", async () => {
     const caseDir = suiteTempRootTracker.makeTempDir();
     const npmRoot = path.join(caseDir, "npm-root");
     const pluginDir = path.join(npmRoot, "node_modules", "managed-plugin-with-test-entry-dep");
@@ -3384,11 +3384,11 @@ describe("installPluginFromDir", () => {
       logger: { info: () => {}, warn: (msg: string) => warnings.push(msg) },
     });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pluginId).toBe("managed-plugin-with-test-entry-dep");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
+      expect(result.error).toContain("test-entry-helper/tests/runtime.test.cjs");
     }
-    expect(warnings).toStrictEqual([]);
   });
 
   it("keeps plugin-root test files excluded during installed tree scans", async () => {
