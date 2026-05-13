@@ -2431,7 +2431,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
           } satisfies PluginRuntime["state"];
         }
         if (prop === "config") {
-          const config: PluginRuntime["config"] = Reflect.get(target, prop, receiver);
+          const config = Reflect.get(target, prop, receiver);
           return {
             ...config,
             current: () => runWithPluginScope(() => config.current()),

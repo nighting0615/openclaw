@@ -36,25 +36,23 @@ describe("plugin registry runtime config scope", () => {
       afterWrite: { mode: "auto" },
       followUp: { mode: "auto", requiresRestart: false },
     } as unknown as Awaited<ReturnType<PluginRuntime["config"]["replaceConfigFile"]>>;
-    const mutateConfigFile: PluginRuntime["config"]["mutateConfigFile"] = async () => {
-      mutateScope = getPluginRuntimeGatewayRequestScope();
-      return {
-        ...replaceResult,
-        result: undefined,
-        attempts: 1,
-      };
-    };
-    const replaceConfigFile: PluginRuntime["config"]["replaceConfigFile"] = async () => {
-      replaceScope = getPluginRuntimeGatewayRequestScope();
-      return replaceResult;
-    };
     const configRuntime = {
       current: vi.fn(() => {
         currentScope = getPluginRuntimeGatewayRequestScope();
         return config;
       }),
-      mutateConfigFile,
-      replaceConfigFile,
+      mutateConfigFile: vi.fn(async () => {
+        mutateScope = getPluginRuntimeGatewayRequestScope();
+        return {
+          ...replaceResult,
+          result: undefined,
+          attempts: 1,
+        };
+      }),
+      replaceConfigFile: vi.fn(async () => {
+        replaceScope = getPluginRuntimeGatewayRequestScope();
+        return replaceResult;
+      }),
       loadConfig: vi.fn(() => {
         loadScope = getPluginRuntimeGatewayRequestScope();
         return config;
