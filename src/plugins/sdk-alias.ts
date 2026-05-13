@@ -522,11 +522,11 @@ function isTrustedCodexPluginModulePath(params: { packageRoot: string; modulePat
     isBundledCodexPluginModulePath(params) ||
     isModulePathInsideNodeModulesPackage({
       modulePath: params.modulePath,
-      packageName: "@openclaw/codex",
+      packageName: OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME,
     }) ||
     isModulePathInsidePackageNamed({
       modulePath: params.modulePath,
-      packageName: "@openclaw/codex",
+      packageName: OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME,
     })
   );
 }
