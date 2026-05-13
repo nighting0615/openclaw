@@ -42,6 +42,7 @@ Docs: https://docs.openclaw.ai
 - Codex migration: make Enter activate the highlighted checkbox row before continuing, so `Skip for now` and bulk-selection rows work even when planned items start preselected.
 - Codex harness: keep auth-profile-backed media tools such as `image_generate` available when OpenAI auth lives in the agent's auth-profile store instead of environment variables.
 - WhatsApp/install: allow Baileys' pinned libsignal git subdependency under pnpm 11 so source installs and local checks can complete.
+- Telegram: preserve supported HTML tags in visible replies and durable mirrors so formatted messages render correctly instead of degrading to escaped text. (#80977) Thanks @obviyus.
 - Plugins/xAI: echo PKCE challenge fields during OAuth authorization-code token exchange for xAI token-endpoint compatibility. (#83499) Thanks @fuller-stack-dev.
 - Codex app-server: hydrate current inbound image attachments before queued runs so Responses-backed agents receive Discord and other channel images as native vision input. Fixes #83466. Thanks @iannwu.
 - Release stability: recover stale session diagnostics and Codex OAuth fallback state so stuck runs and reused refresh tokens clear without blocking follow-up work. (#83503) Thanks @100yenadmin.
