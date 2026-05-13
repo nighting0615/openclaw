@@ -3243,7 +3243,7 @@ describe("installPluginFromDir", () => {
     }
   });
 
-  it("still blocks non-benign LanceDB dependency scanner hits", async () => {
+  it("ignores non-benign LanceDB dependency scanner hits during install-time code scans", async () => {
     const caseDir = suiteTempRootTracker.makeTempDir();
     const npmRoot = path.join(caseDir, "npm-root");
     const pluginDir = path.join(npmRoot, "node_modules", "managed-plugin-with-bad-lancedb");
@@ -3278,19 +3278,21 @@ describe("installPluginFromDir", () => {
       "utf-8",
     );
 
+    const warnings: string[] = [];
     const result = await installPluginFromInstalledPackageDir({
       packageDir: pluginDir,
       dependencyScanRootDir: npmRoot,
+      logger: { info: () => {}, warn: (msg: string) => warnings.push(msg) },
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
-      expect(result.error).toContain("@lancedb/lancedb/dist/native.js");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pluginId).toBe("managed-plugin-with-bad-lancedb");
     }
+    expect(warnings).toStrictEqual([]);
   });
 
-  it("scans installed managed npm peer dependencies reachable from the installed package", async () => {
+  it("ignores installed managed npm peer dependency code during install-time code scans", async () => {
     const caseDir = suiteTempRootTracker.makeTempDir();
     const npmRoot = path.join(caseDir, "npm-root");
     const pluginDir = path.join(npmRoot, "node_modules", "managed-plugin-with-peer");
@@ -3332,14 +3334,14 @@ describe("installPluginFromDir", () => {
       logger: { info: () => {}, warn: (msg: string) => warnings.push(msg) },
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
-      expect(result.error).toContain("peer-runtime-helper/index.cjs");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pluginId).toBe("managed-plugin-with-peer");
     }
+    expect(warnings).toStrictEqual([]);
   });
 
-  it("scans installed dependency runtime entrypoints with test-like paths", async () => {
+  it("ignores installed dependency runtime entrypoints with test-like paths", async () => {
     const caseDir = suiteTempRootTracker.makeTempDir();
     const npmRoot = path.join(caseDir, "npm-root");
     const pluginDir = path.join(npmRoot, "node_modules", "managed-plugin-with-test-entry-dep");
@@ -3382,11 +3384,11 @@ describe("installPluginFromDir", () => {
       logger: { info: () => {}, warn: (msg: string) => warnings.push(msg) },
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
-      expect(result.error).toContain("test-entry-helper/tests/runtime.test.cjs");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pluginId).toBe("managed-plugin-with-test-entry-dep");
     }
+    expect(warnings).toStrictEqual([]);
   });
 
   it("keeps plugin-root test files excluded during installed tree scans", async () => {

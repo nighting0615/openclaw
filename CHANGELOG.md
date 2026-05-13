@@ -40,7 +40,7 @@ Docs: https://docs.openclaw.ai
 
 - Agents/video: hide `video_generate` reference-audio parameters unless a registered video provider supports audio inputs.
 - Update: suppress the false newer-config warning during restart health probing after an update handoff, while keeping future-version mutation guards intact. (#78652)
-- Plugins/install: allow LanceDB's native-binding platform probe and Transformers ESM import shim during installed dependency scans, so plugins depending on `@lancedb/lancedb` no longer get disabled during update while other dependency `child_process`/`eval` hits still block.
+- Plugins/install: limit install-time code safety scans to plugin-owned runtime entrypoints while keeping dependency manifest denylist checks, so trusted packages with large dependency trees no longer get blocked or warned on third-party runtime internals.
 - Installer: honor `--version` for git installs and install from the checked-in lockfile, preventing recent dependency pins from tripping pnpm's minimum-release-age gate during tag installs.
 - Codex migration: make Enter activate the highlighted checkbox row before continuing, so `Skip for now` and bulk-selection rows work even when planned items start preselected.
 - Codex harness: keep auth-profile-backed media tools such as `image_generate` available when OpenAI auth lives in the agent's auth-profile store instead of environment variables.
