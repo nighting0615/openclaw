@@ -20,6 +20,7 @@ export type ReleaseVerifyBetaArgs = {
   evidenceOut?: string;
   skipPostpublish: boolean;
   rerunFailedClawHub: boolean;
+  allowVerifiedClawHubRunFailure: boolean;
   workflowRuns: {
     fullReleaseValidation?: string;
     openclawNpm?: string;
@@ -128,6 +129,7 @@ export function parseReleaseVerifyBetaArgs(argv: string[]): ReleaseVerifyBetaArg
     evidenceOut: undefined,
     skipPostpublish: false,
     rerunFailedClawHub: false,
+    allowVerifiedClawHubRunFailure: false,
     workflowRuns: {},
   };
 
@@ -187,6 +189,9 @@ export function parseReleaseVerifyBetaArgs(argv: string[]): ReleaseVerifyBetaArg
         break;
       case "--rerun-failed-clawhub":
         parsed.rerunFailedClawHub = true;
+        break;
+      case "--allow-verified-clawhub-run-failure":
+        parsed.allowVerifiedClawHubRunFailure = true;
         break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
@@ -338,6 +343,7 @@ function verifyWorkflowRun(params: {
   expectedWorkflowName: string;
   expectedHeadBranch?: string;
   rerunFailed: boolean;
+  allowFailure?: boolean;
 }): WorkflowRunSummary {
   const raw = runCommand("gh", [
     "run",
@@ -387,6 +393,13 @@ function verifyWorkflowRun(params: {
   }
   if (status !== "completed" || conclusion !== "success" || failedJobs.length > 0) {
     const failedNames = failedJobs.map((job) => readString(job.name) ?? "<unnamed>").join(", ");
+    if (params.allowFailure && status === "completed" && failedJobs.length > 0) {
+      return {
+        id: params.id,
+        label: `${params.label} verified with failed workflow`,
+        url: readString(run.url),
+      };
+    }
     throw new Error(
       `${params.label}: run ${params.id} is ${status ?? "<missing>"}/${conclusion ?? "<missing>"}${failedNames ? `; failed jobs: ${failedNames}` : ""}.`,
     );
@@ -534,6 +547,7 @@ export async function verifyBetaRelease(
         expectedWorkflowName: "Plugin ClawHub Release",
         expectedHeadBranch: args.workflowRef,
         rerunFailed: args.rerunFailedClawHub,
+        allowFailure: args.allowVerifiedClawHubRunFailure,
       }),
     );
   }

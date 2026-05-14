@@ -17,6 +17,7 @@ describe("parseReleaseVerifyBetaArgs", () => {
       evidenceOut: undefined,
       skipPostpublish: false,
       rerunFailedClawHub: false,
+      allowVerifiedClawHubRunFailure: false,
       workflowRuns: {},
     });
   });
@@ -44,6 +45,7 @@ describe("parseReleaseVerifyBetaArgs", () => {
         ".artifacts/release-evidence.json",
         "--skip-postpublish",
         "--rerun-failed-clawhub",
+        "--allow-verified-clawhub-run-failure",
       ]),
     ).toEqual({
       version: "2026.5.10-beta.3",
@@ -56,6 +58,7 @@ describe("parseReleaseVerifyBetaArgs", () => {
       evidenceOut: ".artifacts/release-evidence.json",
       skipPostpublish: true,
       rerunFailedClawHub: true,
+      allowVerifiedClawHubRunFailure: true,
       workflowRuns: {
         fullReleaseValidation: "10",
         openclawNpm: "11",
