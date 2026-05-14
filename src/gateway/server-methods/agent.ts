@@ -882,7 +882,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         resolvePreferredSessionKeyForSessionIdMatches(matches, requestedSessionId) ??
         requestedSessionKey;
     }
-    if (!requestedSessionKey) {
+    if (!requestedSessionKey && !requestedSessionId) {
       requestedSessionKey = resolveExplicitAgentSessionKey({
         cfg,
         agentId,

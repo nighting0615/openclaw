@@ -26,10 +26,6 @@ import {
   assertCodexThreadStartResponse,
 } from "./protocol-validators.js";
 import {
-  assertCodexThreadResumeResponse,
-  assertCodexThreadStartResponse,
-} from "./protocol-validators.js";
-import {
   isJsonObject,
   type CodexDynamicToolSpec,
   type CodexSandboxPolicy,

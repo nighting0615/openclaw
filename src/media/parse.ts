@@ -643,6 +643,7 @@ export function splitMediaFromOutput(
         const beforeText = cleanLineText(pieces.join(""));
         if (beforeText) {
           lineSegments.push({ type: "text", text: beforeText });
+          keptLines.push(beforeText);
         }
         pieces.length = 0;
         for (const url of media.slice(mediaStartIndex, mediaStartIndex + validCount)) {

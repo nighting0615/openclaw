@@ -15,6 +15,7 @@ import { isPassThroughRemoteMediaSource } from "../../media/media-source-url.js"
 import { resolveOutboundAttachmentFromUrl } from "../../media/outbound-attachment.js";
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
 import { MEDIA_MAX_BYTES } from "../../media/store.js";
+import { resolveConfigDir } from "../../utils.js";
 import { appendReplyMediaFailureWarning } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
 

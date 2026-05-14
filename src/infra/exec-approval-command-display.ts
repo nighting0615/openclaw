@@ -218,7 +218,8 @@ function truncateSummary(text: string): string {
 }
 
 export function summarizeExecApprovalDisplayText(commandText: string): string {
-  const singleLine = sanitizeExecApprovalDisplayText(commandText).replace(/\s+/g, " ").trim();
+  const collapsed = commandText.replace(/[\r\n\t]+/g, " ");
+  const singleLine = sanitizeExecApprovalDisplayText(collapsed).replace(/\s+/g, " ").trim();
   if (!singleLine) {
     return "";
   }
