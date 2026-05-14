@@ -41,6 +41,7 @@ Docs: https://docs.openclaw.ai
 - Agents/video: hide `video_generate` reference-audio parameters unless a registered video provider supports audio inputs.
 - Update: suppress the false newer-config warning during restart health probing after an update handoff, while keeping future-version mutation guards intact. (#78652)
 - Codex startup: treat selectable configured OpenAI agent models as Codex runtime requirements during plugin auto-enable, startup planning, and doctor install repair, so Anthropic-primary configs can still switch to OpenAI/Codex cleanly.
+- Agents: preserve source-reply delivery metadata when merging tool-returned media into the final reply, keeping message-tool-only replies deliverable and mirrored. Thanks @pashpashpash and @vincentkoc.
 - Codex app-server: keep per-agent `CODEX_HOME` isolation without rewriting `HOME` by default, so Codex-run subprocesses can still find normal user-home config, tokens, and CLI state unless the launch explicitly overrides `HOME`. Thanks @pashpashpash.
 - Plugins/install: limit install-time code safety scans to plugin-owned runtime entrypoints while keeping dependency manifest denylist checks, so trusted packages with large dependency trees no longer get blocked or warned on third-party runtime internals.
 - Installer: honor `--version` for git installs and install from the checked-in lockfile, preventing recent dependency pins from tripping pnpm's minimum-release-age gate during tag installs.
