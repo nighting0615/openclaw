@@ -480,7 +480,7 @@ async function completeSimpleWithTimeout<TApi extends Api>(
   }
 }
 
-function requireToolChoicePayload(payload: unknown): unknown {
+function requireToolChoicePayload(payload: unknown): unknown | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
