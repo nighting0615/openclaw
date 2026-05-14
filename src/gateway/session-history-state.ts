@@ -236,7 +236,6 @@ export class SessionHistorySseState {
       return null;
     }
     const carriedSeq = asPositiveSafeInteger(update.messageSeq);
-    const carriedSeq = asPositiveSafeInteger(update.messageSeq);
     if (carriedSeq !== undefined) {
       if (carriedSeq <= this.rawTranscriptSeq) {
         return { shouldRefresh: true };
