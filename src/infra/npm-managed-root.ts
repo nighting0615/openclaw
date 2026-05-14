@@ -412,6 +412,8 @@ function findLockPackageVersion(params: {
 
 function collectNpmLockPeerDependencyPins(params: {
   lockfile: ManagedNpmRootLockfile;
+  preferredPackageName?: string;
+  previousManagedPeerDependencySpecs?: ReadonlyMap<string, string>;
 }): Record<string, string> {
   const pins = new Map<string, string>();
   const packages = isRecord(params.lockfile.packages) ? params.lockfile.packages : {};
@@ -430,11 +432,12 @@ function collectNpmLockPeerDependencyPins(params: {
     if (packageName && isManagedNpmRootHostPeerPackageName(packageName)) {
       continue;
     }
+    const isPreferredPackage = packageName === params.preferredPackageName;
     const peerDependencies = readDependencyRecord(value.peerDependencies);
     for (const [peerName, peerRange] of Object.entries(peerDependencies)) {
       if (
         isManagedNpmRootHostPeerPackageName(peerName) ||
-        pins.has(peerName) ||
+        (pins.has(peerName) && !isPreferredPackage) ||
         !isSafePackageName(peerName)
       ) {
         continue;
@@ -443,7 +446,8 @@ function collectNpmLockPeerDependencyPins(params: {
       if (!version && isOptionalPeerDependency(value, peerName)) {
         continue;
       }
-      pins.set(peerName, version ?? peerRange);
+      const previousManagedSpec = params.previousManagedPeerDependencySpecs?.get(peerName);
+      pins.set(peerName, isPreferredPackage ? peerRange : (previousManagedSpec ?? version ?? peerRange));
     }
   }
   return Object.fromEntries(
@@ -555,6 +559,8 @@ function createManagedNpmPeerPlanArgs(params?: {
 
 async function collectNpmResolvedManagedNpmRootPeerDependencyPins(params: {
   npmRoot: string;
+  preferredPackageName?: string;
+  previousManagedPeerDependencySpecs?: ReadonlyMap<string, string>;
   runCommand?: ManagedNpmRootRunCommand;
   timeoutMs?: number;
 }): Promise<Record<string, string>> {
@@ -565,6 +571,14 @@ async function collectNpmResolvedManagedNpmRootPeerDependencyPins(params: {
     dependencies,
     previousManagedPeerDependencies,
   );
+  const previousManagedPeerDependencySpecs =
+    params.previousManagedPeerDependencySpecs ??
+    new Map(
+      previousManagedPeerDependencies.flatMap((packageName) => {
+        const dependencySpec = dependencies[packageName];
+        return dependencySpec ? [[packageName, dependencySpec] as const] : [];
+      }),
+    );
   for (const packageName of previousManagedPeerDependencies) {
     delete dependencies[packageName];
   }
@@ -621,13 +635,21 @@ async function collectNpmResolvedManagedNpmRootPeerDependencyPins(params: {
         const hostPeerFallbackResult = await command(hostPeerFallbackArgs, hostPeerFallbackOptions);
         if (hostPeerFallbackResult.code === 0) {
           const lockfile = await readManagedNpmRootManifest(tempLockPath);
-          return collectNpmLockPeerDependencyPins({ lockfile });
+          return collectNpmLockPeerDependencyPins({
+            lockfile,
+            preferredPackageName: params.preferredPackageName,
+            previousManagedPeerDependencySpecs,
+          });
         }
       }
       return fallbackPeerPins;
     }
     const lockfile = await readManagedNpmRootManifest(tempLockPath);
-    return collectNpmLockPeerDependencyPins({ lockfile });
+    return collectNpmLockPeerDependencyPins({
+      lockfile,
+      preferredPackageName: params.preferredPackageName,
+      previousManagedPeerDependencySpecs,
+    });
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -688,14 +710,23 @@ export async function syncManagedNpmRootPeerDependencies(params: {
   omitUnsupportedManagedOverrides?: boolean;
   runCommand?: ManagedNpmRootRunCommand;
   timeoutMs?: number;
+  preferredPackageName?: string;
 }): Promise<boolean> {
   const manifestPath = path.join(params.npmRoot, "package.json");
   const manifest = await readManagedNpmRootManifest(manifestPath);
   const dependencies = readDependencyRecord(manifest.dependencies);
   const previousManagedPeerDependencies = readManagedPeerDependencyKeys(manifest.openclaw);
   const previousManagedPeerDependencySet = new Set(previousManagedPeerDependencies);
+  const previousManagedPeerDependencySpecs = new Map(
+    previousManagedPeerDependencies.flatMap((packageName) => {
+      const dependencySpec = dependencies[packageName];
+      return dependencySpec ? [[packageName, dependencySpec] as const] : [];
+    }),
+  );
   const peerPins = await collectNpmResolvedManagedNpmRootPeerDependencyPins({
     npmRoot: params.npmRoot,
+    preferredPackageName: params.preferredPackageName,
+    previousManagedPeerDependencySpecs,
     runCommand: params.runCommand,
     timeoutMs: params.timeoutMs,
   });
@@ -706,7 +737,12 @@ export async function syncManagedNpmRootPeerDependencies(params: {
     }
   }
   for (const [packageName, dependencySpec] of Object.entries(peerPins)) {
-    nextDependencies[packageName] = dependencies[packageName] ?? dependencySpec;
+    if (
+      previousManagedPeerDependencySet.has(packageName) ||
+      !Object.hasOwn(dependencies, packageName)
+    ) {
+      nextDependencies[packageName] = dependencySpec;
+    }
   }
 
   const managedOverrides = params.omitUnsupportedManagedOverrides

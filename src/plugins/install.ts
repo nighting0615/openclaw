@@ -653,6 +653,7 @@ async function installPluginFromManagedNpmRoot(
   };
   const syncManagedPeerDependenciesForInstall = async (options?: {
     omitUnsupportedManagedOverrides?: boolean;
+    preferredPackageName?: string;
   }): Promise<{ ok: true; changed: boolean } | { ok: false; error: string }> => {
     try {
       return {
@@ -661,6 +662,7 @@ async function installPluginFromManagedNpmRoot(
           npmRoot,
           managedOverrides,
           omitUnsupportedManagedOverrides: options?.omitUnsupportedManagedOverrides,
+          preferredPackageName: options?.preferredPackageName,
           timeoutMs,
         }),
       };
@@ -677,7 +679,9 @@ async function installPluginFromManagedNpmRoot(
     dependencySpec: params.dependencySpec,
     managedOverrides,
   });
-  const initialPeerSync = await syncManagedPeerDependenciesForInstall();
+  const initialPeerSync = await syncManagedPeerDependenciesForInstall({
+    preferredPackageName: params.packageName,
+  });
   if (!initialPeerSync.ok) {
     return await rollbackFailedManagedNpmInstall(initialPeerSync.error);
   }
@@ -717,6 +721,7 @@ async function installPluginFromManagedNpmRoot(
     });
     const aliasRetryPeerSync = await syncManagedPeerDependenciesForInstall({
       omitUnsupportedManagedOverrides: true,
+      preferredPackageName: params.packageName,
     });
     if (!aliasRetryPeerSync.ok) {
       return await rollbackFailedManagedNpmInstall(aliasRetryPeerSync.error);
@@ -741,6 +746,7 @@ async function installPluginFromManagedNpmRoot(
   for (let peerSyncPass = 0; peerSyncPass < 10; peerSyncPass += 1) {
     const peerSync = await syncManagedPeerDependenciesForInstall({
       omitUnsupportedManagedOverrides,
+      preferredPackageName: params.packageName,
     });
     if (!peerSync.ok) {
       return await rollbackFailedManagedNpmInstall(peerSync.error);
@@ -769,6 +775,7 @@ async function installPluginFromManagedNpmRoot(
   if (!settledManagedPeerDependencies) {
     const peerSync = await syncManagedPeerDependenciesForInstall({
       omitUnsupportedManagedOverrides,
+      preferredPackageName: params.packageName,
     });
     if (!peerSync.ok) {
       return await rollbackFailedManagedNpmInstall(peerSync.error);
