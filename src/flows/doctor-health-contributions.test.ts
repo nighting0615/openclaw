@@ -100,6 +100,10 @@ describe("doctor health contributions", () => {
     vi.restoreAllMocks();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("runs release configured plugin install repair before plugin registry and final config writes", () => {
     const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
 
@@ -278,7 +282,7 @@ describe("doctor health contributions", () => {
       (entry) => entry.id === "doctor:write-config",
     )!;
 
-    it("disables config size drops when OPENCLAW_UPDATE_IN_PROGRESS=1", async () => {
+    it("allows config size drops when OPENCLAW_UPDATE_IN_PROGRESS=1", async () => {
       const ctx = buildWriteConfigCtx({
         OPENCLAW_UPDATE_IN_PROGRESS: "1",
         OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
@@ -287,7 +291,7 @@ describe("doctor health contributions", () => {
       expect(mocks.replaceConfigFile).toHaveBeenCalledWith(
         expect.objectContaining({
           writeOptions: expect.objectContaining({
-            allowConfigSizeDrop: false,
+            allowConfigSizeDrop: true,
           }),
         }),
       );
