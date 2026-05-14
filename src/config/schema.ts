@@ -348,14 +348,12 @@ function applyChannelHints(hints: ConfigUiHints, channels: ChannelUiMetadata[]):
 
 function listHeartbeatTargetChannels(channels: ChannelUiMetadata[]): string[] {
   const seen = new Set<string>();
-  const ordered: string[] = [];
   for (const id of CHANNEL_IDS) {
     const normalized = normalizeLowercaseStringOrEmpty(id);
     if (!normalized || seen.has(normalized)) {
       continue;
     }
     seen.add(normalized);
-    ordered.push(normalized);
   }
   for (const channel of channels) {
     const normalized = normalizeLowercaseStringOrEmpty(channel.id);
@@ -363,9 +361,10 @@ function listHeartbeatTargetChannels(channels: ChannelUiMetadata[]): string[] {
       continue;
     }
     seen.add(normalized);
-    ordered.push(normalized);
   }
-  return ordered;
+  return [...seen].toSorted((left, right) =>
+    left.localeCompare(right, "en", { sensitivity: "base" }),
+  );
 }
 
 function applyHeartbeatTargetHints(
