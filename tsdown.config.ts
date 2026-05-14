@@ -168,6 +168,8 @@ const explicitNeverBundleDependencies = [
   "@lancedb/lancedb",
   "@larksuiteoapi/node-sdk",
   "@matrix-org/matrix-sdk-crypto-nodejs",
+  "@slack/bolt",
+  "@slack/web-api",
   "@vitest/expect",
   "matrix-js-sdk",
   "prism-media",
