@@ -532,6 +532,7 @@ describe("doctor preview warnings", () => {
         },
       },
     } satisfies OpenClawConfig;
+    } satisfies OpenClawConfig;
 
     expectWarningsContaining(collectVisibleReplyToolPolicyWarnings(cfg), [
       'messages.groupChat.visibleReplies is set to "message_tool"',
@@ -571,6 +572,7 @@ describe("doctor preview warnings", () => {
           },
         },
       },
+    } satisfies OpenClawConfig;
     } satisfies OpenClawConfig;
 
     expect(collectVisibleReplyToolPolicyWarnings(cfg)).toStrictEqual([]);

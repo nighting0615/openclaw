@@ -303,11 +303,16 @@ export function collectVisibleReplyToolPolicyWarnings(cfg: OpenClawConfig): stri
     if (targets.length === 0) {
       return warnings;
     }
-    warnings.push(
-      `- ${groupPolicy.path} is set to "message_tool", but the message tool is unavailable for ${formatTargets(
-        targets,
-      )}; OpenClaw falls back to automatic visible replies, so normal replies may post to the source chat. Enable the message tool or set ${groupPolicy.path} to "automatic".`,
-    );
+    const targetSummary = formatTargets(targets);
+    if (groupPolicy.provenance === "default") {
+      warnings.push(
+        `- messages.groupChat.visibleReplies defaults to "message_tool", but the message tool is unavailable for ${targetSummary}; OpenClaw falls back to automatic group/channel replies to avoid silent responses. Enable the message tool or set messages.groupChat.visibleReplies explicitly.`,
+      );
+    } else {
+      warnings.push(
+        `- ${groupPolicy.path} is set to "message_tool", but the message tool is unavailable for ${targetSummary}; OpenClaw falls back to automatic visible replies, so normal replies may post to the source chat. Enable the message tool or set ${groupPolicy.path} to "automatic".`,
+      );
+    }
   }
 
   const globalVisibleReplies = cfg.messages?.visibleReplies;
