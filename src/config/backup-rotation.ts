@@ -112,13 +112,11 @@ interface PreUpdateSnapshotFs {
   writeFile: (
     path: string,
     content: string,
-    options: { encoding: "utf-8"; mode: number; flag: "w" },
+    options: { encoding: "utf-8"; mode: number; flag: "w" | "wx" },
   ) => Promise<void>;
   readFile: (path: string, encoding: "utf-8") => Promise<string>;
   existsSync: (path: string) => boolean;
 }
-
-const preUpdateConfigSnapshotsWritten = new Set<string>();
 
 export async function createPreUpdateConfigSnapshot(params: {
   configPath: string;
@@ -127,20 +125,18 @@ export async function createPreUpdateConfigSnapshot(params: {
   if (!params.fs.existsSync(params.configPath)) {
     return;
   }
-  const snapshotKey = path.resolve(params.configPath);
-  if (preUpdateConfigSnapshotsWritten.has(snapshotKey)) {
-    return;
-  }
-  preUpdateConfigSnapshotsWritten.add(snapshotKey);
   const snapshotPath = `${params.configPath}.pre-update`;
   try {
     const content = await params.fs.readFile(params.configPath, "utf-8");
     await params.fs.writeFile(snapshotPath, content, {
       encoding: "utf-8",
       mode: 0o600,
-      flag: "w",
+      flag: "wx",
     });
-  } catch {
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && err.code === "EEXIST") {
+      return;
+    }
     // best-effort, do not block update
   }
 }

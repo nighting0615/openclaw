@@ -194,22 +194,20 @@ describe("config backup rotation", () => {
     });
   });
 
-  it("createPreUpdateConfigSnapshot replaces a preexisting snapshot once per process", async () => {
+  it("createPreUpdateConfigSnapshot is first-write-wins; later calls do not overwrite", async () => {
     await withTempHome(async () => {
       const configPath = resolveConfigPathFromTempState();
-      const stale = JSON.stringify({ snapshot: "stale" });
-      const current = JSON.stringify({ snapshot: "current" });
+      const original = JSON.stringify({ snapshot: "first" });
       const second = JSON.stringify({ snapshot: "second" });
       const snapshotPath = `${configPath}.pre-update`;
-      await fs.writeFile(configPath, current, { mode: 0o600 });
-      await fs.writeFile(snapshotPath, stale, { mode: 0o600 });
+      await fs.writeFile(configPath, original, { mode: 0o600 });
 
       const { existsSync } = await import("node:fs");
       await createPreUpdateConfigSnapshot({
         configPath,
         fs: { writeFile: fs.writeFile, readFile: fs.readFile, existsSync },
       });
-      await expect(fs.readFile(snapshotPath, "utf-8")).resolves.toBe(current);
+      await expect(fs.readFile(snapshotPath, "utf-8")).resolves.toBe(original);
 
       // Later writes in the same update attempt should not replace the first snapshot.
       await fs.writeFile(configPath, second);
@@ -217,7 +215,7 @@ describe("config backup rotation", () => {
         configPath,
         fs: { writeFile: fs.writeFile, readFile: fs.readFile, existsSync },
       });
-      await expect(fs.readFile(snapshotPath, "utf-8")).resolves.toBe(current);
+      await expect(fs.readFile(snapshotPath, "utf-8")).resolves.toBe(original);
     });
   });
 
