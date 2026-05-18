@@ -61,7 +61,7 @@ type StatusScanCoreBootstrapParams<TAgentStatus> = {
   coldStart: boolean;
   cfg: OpenClawConfig;
   hasConfiguredChannels: boolean;
-  opts: { timeoutMs?: number; all?: boolean };
+  opts: { timeoutMs?: number; all?: boolean; deep?: boolean };
   getTailnetHostname: (runner: StatusScanExecRunner) => Promise<string | null>;
   getUpdateCheckResult: (params: {
     timeoutMs: number;
@@ -81,7 +81,9 @@ export async function createStatusScanCoreBootstrap<TAgentStatus>(
     hasConfiguredChannels: params.hasConfiguredChannels,
     all: params.opts.all,
   });
-  const updateTimeoutMs = params.opts.all ? 6500 : 2500;
+  const updateTimeoutMs =
+    params.opts.timeoutMs ??
+    (params.opts.all === true || params.opts.deep === true ? 10_000 : 5_000);
   const tailscaleDnsPromise =
     tailscaleMode === "off"
       ? Promise.resolve<string | null>(null)

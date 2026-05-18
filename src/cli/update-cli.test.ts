@@ -1837,6 +1837,26 @@ describe("update-cli", () => {
     },
   ] as const)("updateStatusCommand rendering: $name", runUpdateCliScenario);
 
+  it.each([
+    { name: "default", timeout: undefined, expectedTimeoutMs: 10_000 },
+    { name: "explicit", timeout: "12", expectedTimeoutMs: 12_000 },
+  ] as const)(
+    "uses the $name update status timeout budget",
+    async ({ timeout, expectedTimeoutMs }) => {
+      vi.mocked(checkUpdateStatus).mockClear();
+
+      await updateStatusCommand({ json: true, timeout });
+
+      expect(checkUpdateStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeoutMs: expectedTimeoutMs,
+          fetchGit: true,
+          includeRegistry: true,
+        }),
+      );
+    },
+  );
+
   it("renders update status when unrelated config validation would fail", async () => {
     vi.mocked(readConfigFileSnapshot).mockResolvedValue({
       ...baseSnapshot,

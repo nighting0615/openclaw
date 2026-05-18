@@ -16,6 +16,8 @@ import { theme } from "../../terminal/theme.js";
 import { VERSION } from "../../version.js";
 import { parseTimeoutMsOrExit, resolveUpdateRoot, type UpdateStatusOptions } from "./shared.js";
 
+const DEFAULT_UPDATE_STATUS_TIMEOUT_MS = 10_000;
+
 function formatGitStatusLine(params: {
   branch: string | null;
   tag: string | null;
@@ -44,7 +46,7 @@ export async function updateStatusCommand(opts: UpdateStatusOptions): Promise<vo
 
   const update = await checkUpdateStatus({
     root,
-    timeoutMs: timeoutMs ?? 3500,
+    timeoutMs: timeoutMs ?? DEFAULT_UPDATE_STATUS_TIMEOUT_MS,
     fetchGit: true,
     includeRegistry: true,
     registryChannel: resolveRegistryUpdateChannel({
