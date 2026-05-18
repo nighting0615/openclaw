@@ -244,6 +244,10 @@ export class TelegramPollingSession {
     );
   }
 
+  #logInfo(line: string): void {
+    (this.opts.runtime?.log ?? this.opts.log)(line);
+  }
+
   get activeRunner() {
     return this.#activeRunner;
   }
@@ -685,7 +689,7 @@ export class TelegramPollingSession {
       network: ingress.network,
       proxy: ingress.proxy,
     });
-    this.opts.log(`[telegram][diag] isolated polling ingress started spool=${spoolDir}`);
+    this.#logInfo(`[telegram][diag] isolated polling ingress started spool=${spoolDir}`);
     const pollState: {
       startedAt: number | null;
       offset: number | null;
@@ -809,7 +813,8 @@ export class TelegramPollingSession {
         return "continue";
       }
       const errorText = pollState.error ? ` error=${pollState.error}` : "";
-      this.opts.log(
+      const logStopped = pollState.error ? this.opts.log : (line: string) => this.#logInfo(line);
+      logStopped(
         `[telegram][diag] isolated polling ingress stopped outcome=${pollState.outcome} startedAt=${pollState.startedAt ?? "n/a"} offset=${pollState.offset ?? "n/a"}${errorText}`,
       );
       const shouldRestart = await this.#waitBeforeRestart(

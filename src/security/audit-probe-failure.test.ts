@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { collectDeepProbeFindings } from "./audit-deep-probe-findings.js";
+import { runSecurityAudit } from "./audit.js";
 
 function requireProbeFailure(findings: ReturnType<typeof collectDeepProbeFindings>) {
   const finding = findings.find((entry) => entry.checkId === "gateway.probe_failed");
@@ -10,6 +11,42 @@ function requireProbeFailure(findings: ReturnType<typeof collectDeepProbeFinding
 }
 
 describe("security audit deep probe failure", () => {
+  it("uses the presence-only gateway probe for deep audit liveness", async () => {
+    const probeGatewayFn = vi.fn(async () => ({
+      ok: true,
+      url: "ws://127.0.0.1:18789",
+      connectLatencyMs: 8,
+      error: null,
+      close: null,
+      auth: {
+        role: "operator",
+        scopes: ["operator.read"],
+        capability: "read_only",
+      },
+      health: null,
+      status: null,
+      presence: [],
+      configSnapshot: null,
+    }));
+
+    await runSecurityAudit({
+      config: { gateway: { mode: "local" } },
+      deep: true,
+      includeFilesystem: false,
+      includeChannelSecurity: false,
+      loadPluginSecurityCollectors: false,
+      deepTimeoutMs: 1000,
+      probeGatewayFn: probeGatewayFn as never,
+    });
+
+    expect(probeGatewayFn).toHaveBeenCalledWith({
+      url: "ws://127.0.0.1:18789",
+      auth: {},
+      timeoutMs: 1000,
+      detailLevel: "presence",
+    });
+  });
+
   it("adds probe_failed warnings for deep probe failure modes", () => {
     const cases: Array<{
       name: string;

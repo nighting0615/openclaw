@@ -318,16 +318,32 @@ export async function probeGateway(opts: {
         }
         // Once the gateway has accepted the session, a slow follow-up RPC should no longer
         // downgrade the probe to "unreachable". Give detail fetching its own budget.
-        armProbeTimer(() => {
+        let detailHealth: unknown = null;
+        let detailStatus: unknown = null;
+        let detailPresence: SystemPresence[] | null = null;
+        let detailConfigSnapshot: unknown = null;
+        let detailReadVerified = false;
+        const settleDetailTimeout = () => {
           settleProbe({
-            ok: false,
-            error: "timeout",
-            health: null,
-            status: null,
-            presence: null,
-            configSnapshot: null,
+            ok: detailReadVerified,
+            error: detailReadVerified ? null : "timeout",
+            verifiedRead: detailReadVerified,
+            health: detailHealth,
+            status: detailStatus,
+            presence: detailPresence,
+            configSnapshot: detailConfigSnapshot,
           });
-        });
+        };
+        const captureDetail = async <T>(
+          request: Promise<T>,
+          assign: (value: T) => void,
+        ): Promise<T> => {
+          const value = await request;
+          assign(value);
+          detailReadVerified = true;
+          return value;
+        };
+        armProbeTimer(settleDetailTimeout);
         try {
           if (detailLevel === "presence") {
             const presence = await client.request("system-presence");
@@ -343,10 +359,18 @@ export async function probeGateway(opts: {
             return;
           }
           const [health, status, presence, configSnapshot] = await Promise.all([
-            client.request("health"),
-            client.request("status"),
-            client.request("system-presence"),
-            client.request("config.get", {}),
+            captureDetail(client.request("health"), (value) => {
+              detailHealth = value;
+            }),
+            captureDetail(client.request("status", { includeChannelSummary: false }), (value) => {
+              detailStatus = value;
+            }),
+            captureDetail(client.request("system-presence"), (value) => {
+              detailPresence = Array.isArray(value) ? (value as SystemPresence[]) : null;
+            }),
+            captureDetail(client.request("config.get", {}), (value) => {
+              detailConfigSnapshot = value;
+            }),
           ]);
           settleProbe({
             ok: true,
@@ -359,6 +383,18 @@ export async function probeGateway(opts: {
           });
         } catch (err) {
           const error = formatErrorMessage(err);
+          if (detailReadVerified) {
+            settleProbe({
+              ok: true,
+              error: null,
+              verifiedRead: true,
+              health: detailHealth,
+              status: detailStatus,
+              presence: detailPresence,
+              configSnapshot: detailConfigSnapshot,
+            });
+            return;
+          }
           settleProbe({
             ok: false,
             error,

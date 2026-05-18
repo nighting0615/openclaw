@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const gatewayClientState = vi.hoisted(() => ({
   options: null as Record<string, unknown> | null,
   requests: [] as string[],
+  requestParams: [] as Array<{ method: string; params: unknown }>,
+  requestDelays: {} as Record<string, number>,
   startCalls: 0,
   startMode: "hello" as "hello" | "close" | "connect-error-close" | "startup-retry-then-hello",
   close: { code: 1008, reason: "pairing required" },
@@ -116,8 +118,13 @@ class MockGatewayClient {
 
   stop(): void {}
 
-  async request(method: string): Promise<unknown> {
+  async request(method: string, params?: unknown): Promise<unknown> {
     gatewayClientState.requests.push(method);
+    gatewayClientState.requestParams.push({ method, params });
+    const delayMs = gatewayClientState.requestDelays[method] ?? 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     if (method === "system-presence") {
       return [];
     }
@@ -194,6 +201,8 @@ describe("probeGateway", () => {
     gatewayClientState.startMode = "hello";
     gatewayClientState.options = null;
     gatewayClientState.requests = [];
+    gatewayClientState.requestParams = [];
+    gatewayClientState.requestDelays = {};
     gatewayClientState.startCalls = 0;
     gatewayClientState.close = { code: 1008, reason: "pairing required" };
     gatewayClientState.helloAuth = {
@@ -280,6 +289,10 @@ describe("probeGateway", () => {
       "system-presence",
       "config.get",
     ]);
+    expect(gatewayClientState.requestParams).toContainEqual({
+      method: "status",
+      params: { includeChannelSummary: false },
+    });
     expect(result.ok).toBe(true);
     expectProbeAuthFields(result, {
       role: "operator",
@@ -417,6 +430,29 @@ describe("probeGateway", () => {
     expect(result.health).toBeNull();
     expect(result.status).toBeNull();
     expect(result.configSnapshot).toBeNull();
+  });
+
+  it("keeps full probes ok when slow optional detail RPCs exceed the detail budget", async () => {
+    gatewayClientState.requestDelays.status = 500;
+    gatewayClientState.requestDelays["config.get"] = 500;
+
+    const result = await probeGateway({
+      url: "ws://127.0.0.1:18789",
+      timeoutMs: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeNull();
+    expect(result.health).toEqual({});
+    expect(result.presence).toEqual([]);
+    expect(result.status).toBeNull();
+    expect(result.configSnapshot).toBeNull();
+    expect(gatewayClientState.requests).toEqual([
+      "health",
+      "status",
+      "system-presence",
+      "config.get",
+    ]);
   });
 
   it("passes through tls fingerprints for secure daemon probes", async () => {

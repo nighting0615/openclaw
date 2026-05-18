@@ -11,8 +11,8 @@ const nodeBin = process.execPath;
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 4096;
 const BUILD_CACHE_VERSION = 2;
 const DEFAULT_GATEWAY_LABEL = `gui/${process.getuid?.() ?? "$UID"}/ai.openclaw.gateway`;
-const DEFAULT_GATEWAY_LOG =
-  process.env.OPENCLAW_GATEWAY_LOG ?? "/Users/ai/openclaw/runtime/logs/openclaw/gateway.log";
+const POSIX_OPENCLAW_TMP_DIR = "/tmp/openclaw";
+const LEGACY_GATEWAY_LOG = "/Users/ai/openclaw/runtime/logs/openclaw/gateway.log";
 const DEFAULT_GATEWAY_RESTART_WAIT_TIMEOUT_MS = 90_000;
 const DEFAULT_GATEWAY_RESTART_WAIT_POLL_MS = 1_000;
 export const BUILD_ALL_STEPS = [
@@ -135,13 +135,30 @@ export const BUILD_ALL_PROFILES = {
   ],
 };
 
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resolveDefaultGatewayLogPath(params = {}) {
+  const now = params.now ?? new Date();
+  return path.join(POSIX_OPENCLAW_TMP_DIR, `openclaw-${formatLocalDate(now)}.log`);
+}
+
+function shouldReadLegacyGatewayLogFallback(gatewayLogPath) {
+  return path.resolve(gatewayLogPath) === path.resolve(resolveDefaultGatewayLogPath());
+}
+
 export function resolveGatewayAutoRestartPlan(params = {}) {
   const profile = params.profile ?? "full";
   const env = params.env ?? process.env;
   const platform = params.platform ?? process.platform;
   const launchctlCommand = params.launchctlCommand ?? "launchctl";
   const gatewayLabel = params.gatewayLabel ?? DEFAULT_GATEWAY_LABEL;
-  const gatewayLogPath = params.gatewayLogPath ?? env.OPENCLAW_GATEWAY_LOG ?? DEFAULT_GATEWAY_LOG;
+  const gatewayLogPath =
+    params.gatewayLogPath ?? env.OPENCLAW_GATEWAY_LOG ?? resolveDefaultGatewayLogPath();
   const waitTimeoutMs =
     params.waitTimeoutMs ??
     Number.parseInt(
@@ -186,27 +203,127 @@ export function resolveGatewayAutoRestartPlan(params = {}) {
   };
 }
 
+function parseTimestamp(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  const parsed = Date.parse(value.trim());
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseStructuredGatewayReadyTimestamp(line) {
+  let record;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  const message =
+    typeof record?.message === "string"
+      ? record.message
+      : typeof record?.["1"] === "string"
+        ? record["1"]
+        : "";
+  if (!/^gateway ready(?:\s|\(|$)/u.test(message.trim())) {
+    return undefined;
+  }
+  return (
+    parseTimestamp(record?._meta?.date) ??
+    parseTimestamp(record?.time) ??
+    parseTimestamp(record?.date)
+  );
+}
+
+function parseLegacyGatewayReadyTimestamp(line) {
+  const readyMatch = line.match(/^(\S+)\s+\[gateway\]\s+(?:gateway\s+)?ready(?:\s|\(|$)/u);
+  if (!readyMatch) {
+    return undefined;
+  }
+  return parseTimestamp(readyMatch[1]);
+}
+
+function extractReferencedLogPath(line) {
+  let text = line;
+  try {
+    const record = JSON.parse(line);
+    text =
+      typeof record?.message === "string"
+        ? record.message
+        : typeof record?.["1"] === "string"
+          ? record["1"]
+          : line;
+  } catch {
+    // Legacy text logs are handled by the same expression below.
+  }
+  const match = text.match(/\blog file:\s+(\S+)/u);
+  const logPath = match?.[1]?.trim();
+  return logPath && path.isAbsolute(logPath) ? logPath : undefined;
+}
+
 export function readLatestGatewayReadyTimestamp(gatewayLogPath, params = {}) {
   const fsImpl = params.fs ?? fs;
+  const visited = params.visited ?? new Set();
+  const depth = params.depth ?? 0;
+  if (visited.has(gatewayLogPath)) {
+    return undefined;
+  }
+  visited.add(gatewayLogPath);
   let content = "";
   try {
     content = fsImpl.readFileSync(gatewayLogPath, "utf8");
   } catch {
+    if (
+      depth === 0 &&
+      gatewayLogPath !== LEGACY_GATEWAY_LOG &&
+      shouldReadLegacyGatewayLogFallback(gatewayLogPath)
+    ) {
+      return readLatestGatewayReadyTimestamp(LEGACY_GATEWAY_LOG, {
+        ...params,
+        depth: depth + 1,
+        visited,
+      });
+    }
     return undefined;
   }
   let latestReadyAt;
+  const referencedLogPaths = new Set();
   for (const line of content.split(/\r?\n/u)) {
-    const readyMatch = line.match(/^(\S+)\s+\[gateway\]\s+ready(?:\s|\(|$)/u);
-    if (!readyMatch) {
-      continue;
+    const readyAt =
+      parseStructuredGatewayReadyTimestamp(line) ?? parseLegacyGatewayReadyTimestamp(line);
+    if (readyAt !== undefined) {
+      latestReadyAt = latestReadyAt === undefined ? readyAt : Math.max(latestReadyAt, readyAt);
     }
-    const stamp = readyMatch[1]?.trim();
-    if (!stamp) {
-      continue;
+    const referencedLogPath = extractReferencedLogPath(line);
+    if (referencedLogPath) {
+      referencedLogPaths.add(referencedLogPath);
     }
-    const parsed = Date.parse(stamp);
-    if (Number.isFinite(parsed)) {
-      latestReadyAt = parsed;
+  }
+  for (const referencedLogPath of referencedLogPaths) {
+    const referencedReadyAt = readLatestGatewayReadyTimestamp(referencedLogPath, {
+      ...params,
+      depth: depth + 1,
+      visited,
+    });
+    if (referencedReadyAt !== undefined) {
+      latestReadyAt =
+        latestReadyAt === undefined
+          ? referencedReadyAt
+          : Math.max(latestReadyAt, referencedReadyAt);
+    }
+  }
+  if (
+    depth === 0 &&
+    gatewayLogPath !== LEGACY_GATEWAY_LOG &&
+    shouldReadLegacyGatewayLogFallback(gatewayLogPath)
+  ) {
+    const legacyReadyAt = readLatestGatewayReadyTimestamp(LEGACY_GATEWAY_LOG, {
+      ...params,
+      depth: depth + 1,
+      visited,
+    });
+    if (legacyReadyAt !== undefined) {
+      latestReadyAt =
+        latestReadyAt === undefined ? legacyReadyAt : Math.max(latestReadyAt, legacyReadyAt);
     }
   }
   return latestReadyAt;

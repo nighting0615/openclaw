@@ -24,6 +24,13 @@ function getBuildAllStep(label: string) {
   return step;
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function withBuildCacheFixture(
   run: (fixture: {
     rootDir: string;
@@ -222,7 +229,7 @@ describe("resolveBuildAllSteps", () => {
       launchctlCommand: "launchctl",
       gatewayLabel: "gui/502/ai.openclaw.gateway",
       args: ["kickstart", "-k", "gui/502/ai.openclaw.gateway"],
-      gatewayLogPath: "/Users/ai/openclaw/runtime/logs/openclaw/gateway.log",
+      gatewayLogPath: path.join("/tmp/openclaw", `openclaw-${formatLocalDate(new Date())}.log`),
       waitTimeoutMs: 90000,
       waitPollMs: 1000,
     });
@@ -385,11 +392,53 @@ describe("gateway auto-restart verification", () => {
           "2026-04-24T16:47:19.121+08:00 [telegram] sendMessage ok chat=109950863 message=8910",
           "2026-04-24T16:48:01.002+08:00 [gateway] ready (8 plugins: telegram; 11.0s)",
           "2026-04-24T16:49:02.003+08:00 [gateway] ready",
+          JSON.stringify({
+            _meta: {
+              date: "2026-05-18T06:24:45.493Z",
+              name: '{"subsystem":"gateway"}',
+            },
+            message: "gateway ready",
+            time: "2026-05-18T14:24:45.494+08:00",
+          }),
         ].join("\n"),
       );
 
       expect(readLatestGatewayReadyTimestamp(gatewayLogPath)).toBe(
-        Date.parse("2026-04-24T16:49:02.003+08:00"),
+        Date.parse("2026-05-18T06:24:45.493Z"),
+      );
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("follows the structured runtime log file reference from legacy gateway logs", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-build-all-ready-ref-"));
+    try {
+      const legacyLogPath = path.join(rootDir, "gateway.log");
+      const runtimeLogPath = path.join(rootDir, "openclaw-2026-05-18.log");
+      fs.writeFileSync(
+        legacyLogPath,
+        [
+          "2026-05-18T13:34:14.550+08:00 [gateway] ready",
+          `2026-05-18T13:34:12.421+08:00 [gateway] log file: ${runtimeLogPath}`,
+        ].join("\n"),
+      );
+      fs.writeFileSync(
+        runtimeLogPath,
+        [
+          JSON.stringify({
+            _meta: {
+              date: "2026-05-18T06:24:45.493Z",
+              name: '{"subsystem":"gateway"}',
+            },
+            message: "gateway ready",
+            time: "2026-05-18T14:24:45.494+08:00",
+          }),
+        ].join("\n"),
+      );
+
+      expect(readLatestGatewayReadyTimestamp(legacyLogPath)).toBe(
+        Date.parse("2026-05-18T06:24:45.493Z"),
       );
     } finally {
       fs.rmSync(rootDir, { force: true, recursive: true });
