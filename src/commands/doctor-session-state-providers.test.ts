@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applySessionRouteStateRepair,
   resolveConfiguredDoctorSessionStateRoute,
+  runPluginSessionStateDoctorRepairs,
   scanSessionRouteStateOwners,
   storeMayContainPluginSessionRouteState,
 } from "./doctor-session-state-providers.js";
@@ -262,5 +263,69 @@ describe("doctor session state provider routes", () => {
     });
 
     expect(scan).toEqual({ repairs: [], manualReview: [] });
+  });
+
+  it("resolves configured routes only for plugin state sessions and caches by agent", async () => {
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    const prompter = {
+      confirmRuntimeRepair: vi.fn(async () => false),
+      note: vi.fn(),
+    };
+
+    try {
+      await runPluginSessionStateDoctorRepairs({
+        cfg: {
+          agents: {
+            defaults: {
+              model: { primary: "openai/gpt-5.5" },
+            },
+          },
+          models: {
+            providers: {
+              openai: {
+                baseUrl: "https://api.openai.com/v1",
+                models: [],
+              },
+            },
+          },
+        },
+        store: {
+          "agent:main:cron:maintenance": {
+            sessionId: "cron-session",
+            updatedAt: 1,
+            subagentRecovery: { wedgedAt: 1 },
+          },
+          "agent:main:telegram:direct:1": {
+            sessionId: "telegram-session-1",
+            updatedAt: 2,
+            modelProvider: "openai-codex",
+            model: "gpt-5.4",
+          },
+          "agent:main:telegram:direct:2": {
+            sessionId: "telegram-session-2",
+            updatedAt: 3,
+            cliSessionBindings: {
+              "codex-cli": { sessionId: "codex-session" },
+            },
+          },
+        },
+        absoluteStorePath: "/tmp/openclaw-test-sessions.json",
+        prompter,
+        env: { OPENCLAW_DOCTOR_TRACE: "1" },
+        warnings: [],
+        changes: [],
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(logs.filter((line) => line.includes("route agent="))).toEqual([
+      "[doctor:trace] plugin-session-state route agent=main sample=agent:main:telegram:direct:1",
+    ]);
+    expect(logs.join("\n")).not.toContain("agent:main:cron:maintenance");
+    expect(prompter.confirmRuntimeRepair).not.toHaveBeenCalled();
   });
 });

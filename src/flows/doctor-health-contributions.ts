@@ -915,7 +915,14 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
 }
 
 export async function runDoctorHealthContributions(ctx: DoctorHealthFlowContext): Promise<void> {
+  const traceDoctor = isTruthyEnvValue((ctx.env ?? process.env).OPENCLAW_DOCTOR_TRACE);
   for (const contribution of resolveDoctorHealthContributions()) {
+    if (traceDoctor) {
+      ctx.runtime.log(`[doctor:trace] start ${contribution.id}`);
+    }
     await contribution.run(ctx);
+    if (traceDoctor) {
+      ctx.runtime.log(`[doctor:trace] done ${contribution.id}`);
+    }
   }
 }

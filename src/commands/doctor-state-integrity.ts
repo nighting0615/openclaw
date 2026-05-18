@@ -610,6 +610,15 @@ function shouldSuppressOrphanTranscriptWarning(cfg: OpenClawConfig, agentId: str
   return backendConfig?.backend === "qmd" && backendConfig.qmd?.sessions.enabled === true;
 }
 
+function shouldTraceDoctorStateIntegrity(env: NodeJS.ProcessEnv): boolean {
+  const value = env.OPENCLAW_DOCTOR_TRACE;
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "no";
+}
+
 export async function noteStateIntegrity(
   cfg: OpenClawConfig,
   prompter: DoctorPrompterLike,
@@ -619,6 +628,12 @@ export async function noteStateIntegrity(
   const changes: string[] = [];
   const noteFn = prompter.note ?? note;
   const env = process.env;
+  const traceState = (label: string) => {
+    if (shouldTraceDoctorStateIntegrity(env)) {
+      console.log(`[doctor:trace] state-integrity ${label}`);
+    }
+  };
+  traceState("start");
   const homedir = () => resolveRequiredHomeDir(env, os.homedir);
   const stateDir = resolveStateDir(env, homedir);
   const defaultStateDir = path.join(homedir(), ".openclaw");
@@ -637,6 +652,7 @@ export async function noteStateIntegrity(
   const cloudSyncedStateDir = detectMacCloudSyncedStateDir(stateDir);
   const linuxSdBackedStateDir = detectLinuxSdBackedStateDir(stateDir);
   const suppressOrphanTranscriptWarning = shouldSuppressOrphanTranscriptWarning(cfg, agentId);
+  traceState("paths-resolved");
 
   if (cloudSyncedStateDir) {
     warnings.push(
@@ -820,6 +836,7 @@ export async function noteStateIntegrity(
       }
     }
   }
+  traceState("directories-checked");
 
   const extraStateDirs = new Set<string>();
   if (path.resolve(stateDir) !== path.resolve(defaultStateDir)) {
@@ -839,6 +856,7 @@ export async function noteStateIntegrity(
       ].join("\n"),
     );
   }
+  traceState("extra-state-dirs-checked");
 
   const orphanAgentDirs = listOrphanAgentDirs(cfg, stateDir);
   if (orphanAgentDirs.length > 0) {
@@ -851,10 +869,12 @@ export async function noteStateIntegrity(
       ].join("\n"),
     );
   }
+  traceState("orphan-agent-dirs-checked");
 
   const store = loadSessionStore(storePath);
   const sessionPathOpts = resolveSessionFilePathOptions({ agentId, storePath });
   const entries = Object.entries(store).filter(([, entry]) => entry && typeof entry === "object");
+  traceState(`session-store-loaded entries=${entries.length}`);
   if (entries.length > 0) {
     const recent = entries
       .slice()
@@ -934,7 +954,9 @@ export async function noteStateIntegrity(
         warnings.push(wedgedReasons.map((reason) => `  Reason: ${reason}`).join("\n"));
       }
     }
+    traceState("wedged-subagent-sessions-checked");
 
+    traceState("plugin-session-state-repairs-start");
     await runPluginSessionStateDoctorRepairs({
       cfg,
       store,
@@ -944,7 +966,9 @@ export async function noteStateIntegrity(
       warnings,
       changes,
     });
+    traceState("plugin-session-state-repairs-done");
 
+    traceState("heartbeat-main-session-repair-start");
     await repairHeartbeatPoisonedMainSession({
       cfg,
       store,
@@ -955,6 +979,7 @@ export async function noteStateIntegrity(
       warnings,
       changes,
     });
+    traceState("heartbeat-main-session-repair-done");
 
     for (const warning of describeHeartbeatSessionTargetIssues(cfg)) {
       warnings.push(warning);
@@ -981,9 +1006,11 @@ export async function noteStateIntegrity(
         }
       }
     }
+    traceState("main-session-transcript-checked");
   }
 
   if (existsDir(sessionsDir)) {
+    traceState("orphan-transcripts-scan-start");
     const referencedTranscriptPaths = new Set<string>();
     for (const [, entry] of entries) {
       if (!entry?.sessionId) {
@@ -1043,6 +1070,7 @@ export async function noteStateIntegrity(
         }
       }
     }
+    traceState("orphan-transcripts-scan-done");
   }
 
   if (warnings.length > 0) {
@@ -1051,6 +1079,7 @@ export async function noteStateIntegrity(
   if (changes.length > 0) {
     noteFn(changes.join("\n"), "Doctor changes");
   }
+  traceState("done");
 }
 
 export function noteWorkspaceBackupTip(workspaceDir: string) {

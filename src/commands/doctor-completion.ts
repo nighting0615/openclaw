@@ -102,13 +102,26 @@ export async function doctorShellCompletion(
 ): Promise<void> {
   const cliName = resolveCliName();
   const status = await checkShellCompletionStatus(cliName);
+  const mayRepairCompletion = options.nonInteractive !== true || prompter.shouldRepair;
 
   // Profile uses slow dynamic pattern - upgrade to cached version
   if (status.usesSlowPattern) {
     note(
-      `Your ${status.shell} profile uses slow dynamic completion (source <(...)).\nUpgrading to cached completion for faster shell startup...`,
+      [
+        `Your ${status.shell} profile uses slow dynamic completion (source <(...)).`,
+        ...(mayRepairCompletion
+          ? ["Upgrading to cached completion for faster shell startup..."]
+          : []),
+      ].join("\n"),
       "Shell completion",
     );
+    if (!mayRepairCompletion) {
+      note(
+        `Run \`${cliName} doctor --fix\` or \`${cliName} completion --write-state\` to repair shell completion.`,
+        "Shell completion",
+      );
+      return;
+    }
 
     // Ensure cache exists first
     if (!status.cacheExists) {
@@ -131,9 +144,19 @@ export async function doctorShellCompletion(
   // Profile has completion but no cache - auto-fix
   if (status.profileInstalled && !status.cacheExists) {
     note(
-      `Shell completion is configured in your ${status.shell} profile but the cache is missing.\nRegenerating cache...`,
+      [
+        `Shell completion is configured in your ${status.shell} profile but the cache is missing.`,
+        ...(mayRepairCompletion ? ["Regenerating cache..."] : []),
+      ].join("\n"),
       "Shell completion",
     );
+    if (!mayRepairCompletion) {
+      note(
+        `Run \`${cliName} doctor --fix\` or \`${cliName} completion --write-state\` to regenerate the cache.`,
+        "Shell completion",
+      );
+      return;
+    }
     const generated = await generateCompletionCache();
     if (generated) {
       note(`Completion cache regenerated at ${status.cachePath}`, "Shell completion");

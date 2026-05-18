@@ -52,6 +52,15 @@ function countSessionLabel(count: number): string {
   return countLabel(count, "session");
 }
 
+function shouldTraceDoctorSessionState(env?: NodeJS.ProcessEnv): boolean {
+  const value = (env ?? process.env).OPENCLAW_DOCTOR_TRACE;
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "no";
+}
+
 function repairExample(repair: DoctorSessionRouteStateRepair): string {
   return `${repair.key} (${repair.reasons.join(", ")})`;
 }
@@ -65,15 +74,24 @@ export function resolveConfiguredDoctorSessionStateRoute(params: {
   sessionKey: string;
   env?: NodeJS.ProcessEnv;
 }): DoctorSessionRouteState {
-  const agentId = resolveSessionAgentId(params.cfg, params.sessionKey);
-  const primary = resolveDefaultModelForAgent({ cfg: params.cfg, agentId });
+  return resolveConfiguredDoctorAgentStateRoute({
+    cfg: params.cfg,
+    agentId: resolveSessionAgentId(params.cfg, params.sessionKey),
+  });
+}
+
+function resolveConfiguredDoctorAgentStateRoute(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+}): DoctorSessionRouteState {
+  const primary = resolveDefaultModelForAgent({ cfg: params.cfg, agentId: params.agentId });
   const configuredModelRefs = new Set<string>();
   const addRef = (provider: string, model: string) => {
     configuredModelRefs.add(modelKey(provider, model));
   };
   addRef(primary.provider, primary.model);
   const fallbacks =
-    resolveAgentModelFallbacksOverride(params.cfg, agentId) ??
+    resolveAgentModelFallbacksOverride(params.cfg, params.agentId) ??
     resolveAgentModelFallbackValues(params.cfg.agents?.defaults?.model);
   for (const fallback of fallbacks) {
     const parsed = parseModelRef(fallback, primary.provider, {
@@ -87,8 +105,7 @@ export function resolveConfiguredDoctorSessionStateRoute(params: {
     provider: primary.provider,
     modelId: primary.model,
     config: params.cfg,
-    agentId,
-    sessionKey: params.sessionKey,
+    agentId: params.agentId,
   }).runtime;
   return {
     defaultProvider: primary.provider,
@@ -435,21 +452,44 @@ export async function runPluginSessionStateDoctorRepairs(params: {
   warnings: string[];
   changes: string[];
 }): Promise<void> {
+  const trace = (label: string) => {
+    if (shouldTraceDoctorSessionState(params.env)) {
+      console.log(`[doctor:trace] plugin-session-state ${label}`);
+    }
+  };
+  trace("start");
   if (!storeMayContainPluginSessionRouteState(params.store)) {
+    trace("skip-empty");
     return;
   }
+  trace("store-may-contain-state");
   const owners = resolvePluginDoctorSessionRouteStateOwners({ cfg: params.cfg, env: params.env });
+  trace(`owners=${owners.length}`);
   if (owners.length === 0) {
     return;
   }
-  const routes = Object.fromEntries(
-    Object.keys(params.store).map((sessionKey) => [
-      sessionKey,
-      resolveConfiguredDoctorSessionStateRoute({ cfg: params.cfg, sessionKey, env: params.env }),
-    ]),
+  trace("routes-start");
+  const routeEntries = Object.entries(params.store).filter(([, entry]) =>
+    entryMayContainPluginSessionRouteState(entry),
   );
+  const routesByAgentId = new Map<string, DoctorSessionRouteState>();
+  const routes = Object.fromEntries(
+    routeEntries.map(([sessionKey]) => {
+      const agentId = resolveSessionAgentId(params.cfg, sessionKey);
+      let route = routesByAgentId.get(agentId);
+      if (!route) {
+        trace(`route agent=${agentId} sample=${sessionKey}`);
+        route = resolveConfiguredDoctorAgentStateRoute({ cfg: params.cfg, agentId });
+        routesByAgentId.set(agentId, route);
+      }
+      return [sessionKey, route];
+    }),
+  );
+  trace("routes-done");
   const store = params.store as unknown as Record<string, Record<string, unknown>>;
+  trace("scan-start");
   const scan = scanSessionRouteStateOwners({ owners, store, routes });
+  trace(`scan-done repairs=${scan.repairs.length} manual=${scan.manualReview.length}`);
   if (scan.repairs.length > 0) {
     for (const [ownerLabel, repairs] of groupRepairsByOwner(scan.repairs)) {
       const staleCount = countSessionLabel(repairs.length);
