@@ -384,11 +384,12 @@ describe("gateway auto-restart verification", () => {
           "2026-04-24T16:45:23.884+08:00 [gateway] ready (8 plugins: telegram; 12.2s)",
           "2026-04-24T16:47:19.121+08:00 [telegram] sendMessage ok chat=109950863 message=8910",
           "2026-04-24T16:48:01.002+08:00 [gateway] ready (8 plugins: telegram; 11.0s)",
+          "2026-04-24T16:49:02.003+08:00 [gateway] ready",
         ].join("\n"),
       );
 
       expect(readLatestGatewayReadyTimestamp(gatewayLogPath)).toBe(
-        Date.parse("2026-04-24T16:48:01.002+08:00"),
+        Date.parse("2026-04-24T16:49:02.003+08:00"),
       );
     } finally {
       fs.rmSync(rootDir, { force: true, recursive: true });

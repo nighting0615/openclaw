@@ -41,6 +41,24 @@ function isManagedGlobalReplyMediaPath(candidate: string): boolean {
   return MANAGED_GLOBAL_MEDIA_SUBDIRS.has(firstSegment) || firstSegment.startsWith("tool-");
 }
 
+function isAllowedAbsoluteReplyMediaPath(params: {
+  candidate: string;
+  workspaceDir: string;
+  sandboxRoot?: string;
+}): boolean {
+  if (isManagedGlobalReplyMediaPath(params.candidate)) {
+    return true;
+  }
+  const artifactsRoot = path.join(resolveConfigDir(), "artifacts");
+  if (isPathInside(artifactsRoot, params.candidate)) {
+    return true;
+  }
+  const volatileRoots = [params.workspaceDir, params.sandboxRoot]
+    .filter((root): root is string => Boolean(root))
+    .map((root) => path.join(path.resolve(root), AGENT_STATE_MEDIA_DIRNAME));
+  return volatileRoots.some((root) => isPathInside(root, params.candidate));
+}
+
 function isLikelyLocalMediaSource(media: string): boolean {
   return (
     FILE_URL_RE.test(media) ||

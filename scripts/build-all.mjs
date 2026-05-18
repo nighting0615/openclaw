@@ -196,10 +196,11 @@ export function readLatestGatewayReadyTimestamp(gatewayLogPath, params = {}) {
   }
   let latestReadyAt;
   for (const line of content.split(/\r?\n/u)) {
-    if (!line.includes("[gateway] ready (")) {
+    const readyMatch = line.match(/^(\S+)\s+\[gateway\]\s+ready(?:\s|\(|$)/u);
+    if (!readyMatch) {
       continue;
     }
-    const stamp = line.split(" [gateway] ready (", 1)[0]?.trim();
+    const stamp = readyMatch[1]?.trim();
     if (!stamp) {
       continue;
     }
