@@ -1,6 +1,17 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildQaTarget, getQaBusState, parseQaTarget, pollQaBus } from "./bus-client.js";
+import {
+  buildQaTarget,
+  createQaBusThread,
+  deleteQaBusMessage,
+  editQaBusMessage,
+  getQaBusState,
+  parseQaTarget,
+  pollQaBus,
+  reactToQaBusMessage,
+  readQaBusMessage,
+  sendQaBusMessage,
+} from "./bus-client.js";
 
 async function startJsonServer(
   handler: (req: { url?: string | undefined }) => { statusCode?: number; body: string },
@@ -11,6 +22,55 @@ async function startJsonServer(
       "content-type": "application/json; charset=utf-8",
     });
     res.end(response.body);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("test server failed to bind");
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    async stop() {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
+}
+
+async function startJsonBodyServer(
+  handler: (req: { method?: string | undefined; url?: string | undefined; body: unknown }) => {
+    statusCode?: number;
+    body: string;
+  },
+) {
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    req.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8");
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : undefined;
+      } catch {
+        res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "invalid json" }));
+        return;
+      }
+      const response = handler({ method: req.method, url: req.url, body });
+      res.writeHead(response.statusCode ?? 200, {
+        "content-type": "application/json; charset=utf-8",
+      });
+      res.end(response.body);
+    });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -67,6 +127,119 @@ describe("qa-bus client", () => {
         conversationId: "ops-room",
       }),
     ).toBe("group:ops-room");
+  });
+
+  it("rejects empty prefixed targets", () => {
+    expect(() => parseQaTarget("channel:")).toThrow(/invalid qa-channel target/);
+    expect(() => parseQaTarget("group:")).toThrow(/invalid qa-channel target/);
+    expect(() => parseQaTarget("dm:")).toThrow(/invalid qa-channel target/);
+    expect(() => parseQaTarget("channel:   ")).toThrow(/invalid qa-channel target/);
+    expect(parseQaTarget("dm: alice ")).toEqual({
+      chatType: "direct",
+      conversationId: "alice",
+    });
+  });
+
+  it("does not include baseUrl in action request bodies", async () => {
+    const requests: Array<{ url?: string | undefined; body: unknown }> = [];
+    const server = await startJsonBodyServer((req) => {
+      requests.push({ url: req.url, body: req.body });
+      if (req.url === "/v1/actions/thread-create") {
+        return { body: JSON.stringify({ thread: { id: "thread-a" } }) };
+      }
+      return { body: JSON.stringify({ message: { id: "message-a" } }) };
+    });
+    stops.push(server.stop);
+
+    await sendQaBusMessage({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      to: "dm:alice",
+      text: "hi",
+      senderId: "bot",
+    });
+    await createQaBusThread({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      conversationId: "room-a",
+      title: "Thread A",
+      createdBy: "bot",
+    });
+    await reactToQaBusMessage({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      messageId: "message-a",
+      emoji: "+1",
+      senderId: "bot",
+    });
+    await editQaBusMessage({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      messageId: "message-a",
+      text: "updated",
+    });
+    await deleteQaBusMessage({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      messageId: "message-a",
+    });
+    await readQaBusMessage({
+      baseUrl: server.baseUrl,
+      accountId: "acct-a",
+      messageId: "message-a",
+    });
+
+    expect(requests).toEqual([
+      {
+        url: "/v1/outbound/message",
+        body: {
+          accountId: "acct-a",
+          to: "dm:alice",
+          text: "hi",
+          senderId: "bot",
+        },
+      },
+      {
+        url: "/v1/actions/thread-create",
+        body: {
+          accountId: "acct-a",
+          conversationId: "room-a",
+          title: "Thread A",
+          createdBy: "bot",
+        },
+      },
+      {
+        url: "/v1/actions/react",
+        body: {
+          accountId: "acct-a",
+          messageId: "message-a",
+          emoji: "+1",
+          senderId: "bot",
+        },
+      },
+      {
+        url: "/v1/actions/edit",
+        body: {
+          accountId: "acct-a",
+          messageId: "message-a",
+          text: "updated",
+        },
+      },
+      {
+        url: "/v1/actions/delete",
+        body: {
+          accountId: "acct-a",
+          messageId: "message-a",
+        },
+      },
+      {
+        url: "/v1/actions/read",
+        body: {
+          accountId: "acct-a",
+          messageId: "message-a",
+        },
+      },
+    ]);
   });
 
   it("rejects malformed JSON responses instead of throwing from the stream callback", async () => {

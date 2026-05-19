@@ -69,8 +69,28 @@ const browserCommandGroupDefinitions: readonly BrowserCommandGroupDefinition[] =
   },
   {
     placeholders: [
-      command("screenshot", "Capture a screenshot (MEDIA:<path>)"),
-      command("snapshot", "Capture a snapshot (default: ai; aria is the accessibility tree)"),
+      command("screenshot", "Capture a screenshot (MEDIA:<path>)", [
+        { flags: "--full-page", description: "Capture full scrollable page" },
+        { flags: "--ref <ref>", description: "ARIA ref from ai snapshot" },
+        { flags: "--element <selector>", description: "CSS selector for element screenshot" },
+        { flags: "--labels", description: "Overlay role refs on the screenshot" },
+        { flags: "--type <png|jpeg>", description: "Output type (default: png)" },
+      ]),
+      command("snapshot", "Capture a snapshot (default: ai; aria is the accessibility tree)", [
+        { flags: "--format <aria|ai>", description: "Snapshot format (default: ai)" },
+        { flags: "--target-id <id>", description: "CDP target id (or unique prefix)" },
+        { flags: "--limit <n>", description: "Max nodes (default: 500/800)" },
+        { flags: "--mode <efficient>", description: "Snapshot preset (efficient)" },
+        { flags: "--efficient", description: "Use the efficient snapshot preset" },
+        { flags: "--interactive", description: "Role snapshot: interactive elements only" },
+        { flags: "--compact", description: "Role snapshot: compact output" },
+        { flags: "--depth <n>", description: "Role snapshot: max depth" },
+        { flags: "--selector <sel>", description: "Role snapshot: scope to CSS selector" },
+        { flags: "--frame <sel>", description: "Role snapshot: scope to an iframe selector" },
+        { flags: "--labels", description: "Include viewport label overlay screenshot" },
+        { flags: "--urls", description: "Append discovered link URLs to AI snapshots" },
+        { flags: "--out <path>", description: "Write snapshot to a file" },
+      ]),
     ],
     register: async (args) => {
       const module = await import("./browser-cli-inspect.js");
@@ -232,16 +252,24 @@ function registerLazyBrowserCommands(
   browser: Command,
   parentOpts: (cmd: Command) => BrowserParentOpts,
   argv: string[],
-) {
+): Promise<void> | void {
   const subcommand = resolveBrowserLazySubcommand(argv);
-  registerCommandGroups(browser, buildBrowserCommandGroups({ browser, parentOpts }), {
-    eager: shouldEagerRegisterSubcommands(),
+  const commandGroups = buildBrowserCommandGroups({ browser, parentOpts });
+  if (shouldEagerRegisterSubcommands()) {
+    return (async () => {
+      for (const entry of commandGroups) {
+        await entry.register(browser);
+      }
+    })();
+  }
+  registerCommandGroups(browser, commandGroups, {
+    eager: false,
     primary: subcommand,
     registerPrimaryOnly: subcommand !== null,
   });
 }
 
-export function registerBrowserCli(program: Command, argv: string[] = process.argv) {
+export async function registerBrowserCli(program: Command, argv: string[] = process.argv) {
   const browser = program
     .command("browser")
     .description("Manage OpenClaw's dedicated browser (Chrome/Chromium)")
@@ -270,5 +298,5 @@ export function registerBrowserCli(program: Command, argv: string[] = process.ar
 
   const parentOpts = resolveBrowserParentOpts;
 
-  registerLazyBrowserCommands(browser, parentOpts, argv);
+  await registerLazyBrowserCommands(browser, parentOpts, argv);
 }

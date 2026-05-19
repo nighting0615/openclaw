@@ -100,11 +100,11 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     vi.unstubAllEnvs();
   });
 
-  it("registers browser placeholders without loading handlers for help", () => {
+  it("registers browser placeholders without loading handlers for help", async () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, ["node", "openclaw", "browser", "--help"]);
+    await registerBrowserCli(program, ["node", "openclaw", "browser", "--help"]);
 
     const browser = program.commands.find((command) => command.name() === "browser");
     expect(browser?.commands.map((command) => command.name())).toContain("status");
@@ -119,11 +119,54 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     expect(actionInputMocks.registerBrowserActionInputCommands).not.toHaveBeenCalled();
   });
 
+  it("exposes inspect placeholder options for subcommand help", async () => {
+    const snapshotProgram = new Command();
+    snapshotProgram.name("openclaw");
+
+    await registerBrowserCli(snapshotProgram, [
+      "node",
+      "openclaw",
+      "browser",
+      "snapshot",
+      "--help",
+    ]);
+
+    const snapshotBrowser = snapshotProgram.commands.find(
+      (command) => command.name() === "browser",
+    );
+    const snapshot = snapshotBrowser?.commands.find((command) => command.name() === "snapshot");
+    expect(snapshot?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--format", "--target-id", "--efficient", "--urls", "--out"]),
+    );
+
+    const screenshotProgram = new Command();
+    screenshotProgram.name("openclaw");
+
+    await registerBrowserCli(screenshotProgram, [
+      "node",
+      "openclaw",
+      "browser",
+      "screenshot",
+      "--help",
+    ]);
+
+    const screenshotBrowser = screenshotProgram.commands.find(
+      (command) => command.name() === "browser",
+    );
+    const screenshot = screenshotBrowser?.commands.find(
+      (command) => command.name() === "screenshot",
+    );
+    expect(screenshot?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--full-page", "--ref", "--element", "--labels", "--type"]),
+    );
+    expect(inspectMocks.registerBrowserInspectCommands).not.toHaveBeenCalled();
+  });
+
   it("registers only the requested browser group before dispatch", async () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, ["node", "openclaw", "browser", "status"]);
+    await registerBrowserCli(program, ["node", "openclaw", "browser", "status"]);
 
     const browser = program.commands.find((command) => command.name() === "browser");
     expect(browser?.commands.map((command) => command.name())).toEqual(["status"]);
@@ -139,7 +182,7 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, ["node", "openclaw", "browser", "doctor", "--deep"]);
+    await registerBrowserCli(program, ["node", "openclaw", "browser", "doctor", "--deep"]);
 
     await program.parseAsync(["browser", "doctor", "--deep"], { from: "user" });
 
@@ -154,7 +197,14 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, ["node", "openclaw", "browser", "--json", "open", "about:blank"]);
+    await registerBrowserCli(program, [
+      "node",
+      "openclaw",
+      "browser",
+      "--json",
+      "open",
+      "about:blank",
+    ]);
 
     await program.parseAsync(["browser", "--json", "open", "about:blank"], { from: "user" });
 
@@ -167,7 +217,7 @@ describe("registerBrowserCli lazy browser subcommands", () => {
 
     const tabsProgram = new Command();
     tabsProgram.name("openclaw");
-    registerBrowserCli(tabsProgram, ["node", "openclaw", "browser", "--json", "tabs"]);
+    await registerBrowserCli(tabsProgram, ["node", "openclaw", "browser", "--json", "tabs"]);
 
     await tabsProgram.parseAsync(["browser", "--json", "tabs"], { from: "user" });
 
@@ -183,7 +233,7 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, [
+    await registerBrowserCli(program, [
       "node",
       "openclaw",
       "browser",
@@ -208,7 +258,7 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, [
+    await registerBrowserCli(program, [
       "node",
       "openclaw",
       "browser",
@@ -235,15 +285,17 @@ describe("registerBrowserCli lazy browser subcommands", () => {
     const program = new Command();
     program.name("openclaw");
 
-    registerBrowserCli(program, ["node", "openclaw", "browser", "--help"]);
+    await registerBrowserCli(program, ["node", "openclaw", "browser", "--help"]);
 
-    await vi.waitFor(() =>
-      expect(manageMocks.registerBrowserManageCommands).toHaveBeenCalledTimes(1),
-    );
+    expect(manageMocks.registerBrowserManageCommands).toHaveBeenCalledTimes(1);
     expect(inspectMocks.registerBrowserInspectCommands).toHaveBeenCalledTimes(1);
     expect(actionInputMocks.registerBrowserActionInputCommands).toHaveBeenCalledTimes(1);
     expect(actionObserveMocks.registerBrowserActionObserveCommands).toHaveBeenCalledTimes(1);
     expect(debugMocks.registerBrowserDebugCommands).toHaveBeenCalledTimes(1);
     expect(stateMocks.registerBrowserStateCommands).toHaveBeenCalledTimes(1);
+
+    await program.parseAsync(["browser", "status"], { from: "user" });
+
+    expect(manageMocks.statusAction).toHaveBeenCalledTimes(1);
   });
 });

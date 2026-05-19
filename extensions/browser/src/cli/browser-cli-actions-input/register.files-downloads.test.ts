@@ -81,4 +81,15 @@ describe("browser action input file/download commands", () => {
     expect(String(errorCall?.[0])).toContain("Specify only one of --accept or --dismiss");
     expect(getBrowserCliRuntime().exit).toHaveBeenCalledWith(1);
   });
+
+  it("reports invalid upload paths through the CLI error handler", async () => {
+    const program = createActionInputProgram();
+
+    await program.parseAsync(["browser", "upload", "/etc/hosts"], { from: "user" });
+
+    const errorCall = getBrowserCliRuntime().error.mock.calls.at(-1);
+    expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
+    expect(String(errorCall?.[0])).toContain("uploads directory");
+    expect(getBrowserCliRuntime().exit).toHaveBeenCalledWith(1);
+  });
 });

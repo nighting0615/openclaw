@@ -39,6 +39,7 @@ describe("browser action input wait command", () => {
   beforeEach(() => {
     mocks.callBrowserRequest.mockClear();
     getBrowserCliRuntimeCapture().resetRuntimeCapture();
+    getBrowserCliRuntime().exit.mockImplementation(() => {});
   });
 
   it("keeps the outer request open longer than a time-based wait", async () => {
@@ -63,5 +64,31 @@ describe("browser action input wait command", () => {
       | { timeoutMs?: number }
       | undefined;
     expect(options?.timeoutMs).toBeGreaterThan(21000);
+  });
+
+  it("rejects invalid load state instead of dropping it", async () => {
+    const program = createActionInputProgram();
+
+    await program.parseAsync(["browser", "wait", "--text", "Ready", "--load", "bogus"], {
+      from: "user",
+    });
+
+    const errorCall = getBrowserCliRuntime().error.mock.calls.at(-1);
+    expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
+    expect(String(errorCall?.[0])).toContain("Invalid --load");
+    expect(getBrowserCliRuntime().exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects invalid numeric wait options instead of dropping them", async () => {
+    const program = createActionInputProgram();
+
+    await program.parseAsync(["browser", "wait", "--text", "Ready", "--time", "nope"], {
+      from: "user",
+    });
+
+    const errorCall = getBrowserCliRuntime().error.mock.calls.at(-1);
+    expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
+    expect(String(errorCall?.[0])).toContain("Invalid --time");
+    expect(getBrowserCliRuntime().exit).toHaveBeenCalledWith(1);
   });
 });

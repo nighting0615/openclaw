@@ -119,6 +119,21 @@ export function normalizeQaTarget(raw: string): string | undefined {
   return trimmed;
 }
 
+function parsePrefixedQaTarget(
+  normalized: string,
+  prefix: "channel:" | "group:" | "dm:",
+  chatType: "direct" | "channel" | "group",
+): {
+  chatType: "direct" | "channel" | "group";
+  conversationId: string;
+} {
+  const conversationId = normalized.slice(prefix.length).trim();
+  if (!conversationId) {
+    throw new Error(`invalid qa-channel target: ${normalized}`);
+  }
+  return { chatType, conversationId };
+}
+
 export function parseQaTarget(raw: string): {
   chatType: "direct" | "channel" | "group";
   conversationId: string;
@@ -141,22 +156,13 @@ export function parseQaTarget(raw: string): {
     };
   }
   if (normalized.startsWith("channel:")) {
-    return {
-      chatType: "channel",
-      conversationId: normalized.slice("channel:".length),
-    };
+    return parsePrefixedQaTarget(normalized, "channel:", "channel");
   }
   if (normalized.startsWith("group:")) {
-    return {
-      chatType: "group",
-      conversationId: normalized.slice("group:".length),
-    };
+    return parsePrefixedQaTarget(normalized, "group:", "group");
   }
   if (normalized.startsWith("dm:")) {
-    return {
-      chatType: "direct",
-      conversationId: normalized.slice("dm:".length),
-    };
+    return parsePrefixedQaTarget(normalized, "dm:", "direct");
   }
   return {
     chatType: "direct",
@@ -206,7 +212,8 @@ export async function sendQaBusMessage(params: {
   attachments?: import("./protocol.js").QaBusAttachment[];
   toolCalls?: QaBusToolCall[];
 }) {
-  return await postJson<{ message: QaBusMessage }>(params.baseUrl, "/v1/outbound/message", params);
+  const { baseUrl, ...body } = params;
+  return await postJson<{ message: QaBusMessage }>(baseUrl, "/v1/outbound/message", body);
 }
 
 export async function createQaBusThread(params: {
@@ -216,11 +223,8 @@ export async function createQaBusThread(params: {
   title: string;
   createdBy?: string;
 }) {
-  return await postJson<{ thread: QaBusThread }>(
-    params.baseUrl,
-    "/v1/actions/thread-create",
-    params,
-  );
+  const { baseUrl, ...body } = params;
+  return await postJson<{ thread: QaBusThread }>(baseUrl, "/v1/actions/thread-create", body);
 }
 
 export async function reactToQaBusMessage(params: {
@@ -230,7 +234,8 @@ export async function reactToQaBusMessage(params: {
   emoji: string;
   senderId?: string;
 }) {
-  return await postJson<{ message: QaBusMessage }>(params.baseUrl, "/v1/actions/react", params);
+  const { baseUrl, ...body } = params;
+  return await postJson<{ message: QaBusMessage }>(baseUrl, "/v1/actions/react", body);
 }
 
 export async function editQaBusMessage(params: {
@@ -239,7 +244,8 @@ export async function editQaBusMessage(params: {
   messageId: string;
   text: string;
 }) {
-  return await postJson<{ message: QaBusMessage }>(params.baseUrl, "/v1/actions/edit", params);
+  const { baseUrl, ...body } = params;
+  return await postJson<{ message: QaBusMessage }>(baseUrl, "/v1/actions/edit", body);
 }
 
 export async function deleteQaBusMessage(params: {
@@ -247,7 +253,8 @@ export async function deleteQaBusMessage(params: {
   accountId: string;
   messageId: string;
 }) {
-  return await postJson<{ message: QaBusMessage }>(params.baseUrl, "/v1/actions/delete", params);
+  const { baseUrl, ...body } = params;
+  return await postJson<{ message: QaBusMessage }>(baseUrl, "/v1/actions/delete", body);
 }
 
 export async function readQaBusMessage(params: {
@@ -255,7 +262,8 @@ export async function readQaBusMessage(params: {
   accountId: string;
   messageId: string;
 }) {
-  return await postJson<{ message: QaBusMessage }>(params.baseUrl, "/v1/actions/read", params);
+  const { baseUrl, ...body } = params;
+  return await postJson<{ message: QaBusMessage }>(baseUrl, "/v1/actions/read", body);
 }
 
 export async function searchQaBusMessages(params: {

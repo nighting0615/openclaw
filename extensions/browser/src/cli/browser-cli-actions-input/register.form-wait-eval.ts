@@ -10,6 +10,29 @@ import {
 } from "./shared.js";
 
 const DEFAULT_WAIT_CONDITION_TIMEOUT_MS = 20000;
+const VALID_LOAD_STATES = new Set(["load", "domcontentloaded", "networkidle"]);
+
+function normalizeWaitLoadState(
+  value: unknown,
+): "load" | "domcontentloaded" | "networkidle" | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string" && VALID_LOAD_STATES.has(value)) {
+    return value as "load" | "domcontentloaded" | "networkidle";
+  }
+  throw new Error("Invalid --load: expected load, domcontentloaded, or networkidle");
+}
+
+function normalizeFiniteNumberOption(value: unknown, flag: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (Number.isFinite(value)) {
+    return Number(value);
+  }
+  throw new Error(`Invalid ${flag}: expected a finite number`);
+}
 
 export function registerBrowserFormWaitEvalCommands(
   browser: Command,
@@ -64,12 +87,9 @@ export function registerBrowserFormWaitEvalCommands(
       const { parent, profile } = resolveBrowserActionContext(cmd, parentOpts);
       try {
         const sel = normalizeOptionalString(selector);
-        const load =
-          opts.load === "load" || opts.load === "domcontentloaded" || opts.load === "networkidle"
-            ? (opts.load as "load" | "domcontentloaded" | "networkidle")
-            : undefined;
-        const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : undefined;
-        const timeMs = Number.isFinite(opts.time) ? opts.time : undefined;
+        const load = normalizeWaitLoadState(opts.load);
+        const timeoutMs = normalizeFiniteNumberOption(opts.timeoutMs, "--timeout-ms");
+        const timeMs = normalizeFiniteNumberOption(opts.time, "--time");
         const text = normalizeOptionalString(opts.text);
         const textGone = normalizeOptionalString(opts.textGone);
         const url = normalizeOptionalString(opts.url);
