@@ -202,7 +202,36 @@ function resolveStableRootRuntimeAliasCandidate(params) {
         !source.includes("\n//#region "),
     );
   });
-  return wrappers.length === 1 ? wrappers[0] : null;
+  if (wrappers.length === 1) return wrappers[0];
+  if (wrappers.length > 1) {
+    // dist accumulates wrapper variants when prior builds aren't fully purged
+    // (e.g. tsdown `clean: true` leaves orphan chunks whose hashes no longer
+    // appear in the current entry graph). Pick the newest by mtime so the
+    // stable alias always points at the freshest build's wrapper instead of
+    // silently bailing out and forcing every SDK consumer to hashed-import
+    // fallbacks.
+    return pickNewestCandidate({ distDir, fsImpl, candidates: wrappers });
+  }
+  return null;
+}
+
+function pickNewestCandidate(params) {
+  const { distDir, fsImpl, candidates } = params;
+  let best;
+  for (const candidate of candidates) {
+    const filePath = path.join(distDir, candidate);
+    let stats;
+    try {
+      stats = fsImpl.statSync(filePath);
+    } catch {
+      continue;
+    }
+    const mtimeMs = stats.mtimeMs ?? 0;
+    if (!best || mtimeMs > best.mtimeMs) {
+      best = { candidate, mtimeMs };
+    }
+  }
+  return best?.candidate ?? null;
 }
 
 export function listStableRootRuntimeAliasOutputs(params = {}) {

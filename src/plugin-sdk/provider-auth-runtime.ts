@@ -289,7 +289,64 @@ function resolveRuntimeModelAuthModuleHref(): string {
       }
     }
   }
+  // Bundled (e.g. Vite) builds rewrite the runtime module to a hashed sibling
+  // like `runtime-model-auth.runtime-<hash>.js`; the exact-name candidates above
+  // never match in that layout. Fall back to a directory scan and pick the
+  // newest matching artifact so we stay aligned with the latest build output.
+  const hashedFallback = findHashedRuntimeModelAuthSibling(baseDir);
+  if (hashedFallback) {
+    return pathToFileURL(hashedFallback).href;
+  }
   throw new Error(`Unable to resolve runtime model auth module from ${import.meta.url}`);
+}
+
+function findHashedRuntimeModelAuthSibling(baseDir: string): string | undefined {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(baseDir);
+  } catch {
+    return undefined;
+  }
+  const allowedExtensions = new Set([".js", ".mjs", ".cjs"]);
+  const wrapperCandidates: { path: string; mtimeMs: number }[] = [];
+  const fallbackCandidates: { path: string; mtimeMs: number }[] = [];
+  for (const entry of entries) {
+    if (!entry.startsWith("runtime-model-auth.runtime-")) continue;
+    if (!allowedExtensions.has(path.extname(entry))) continue;
+    const candidatePath = path.join(baseDir, entry);
+    let stats: fs.Stats;
+    try {
+      stats = fs.statSync(candidatePath);
+    } catch {
+      continue;
+    }
+    if (!stats.isFile()) continue;
+    const record = { path: candidatePath, mtimeMs: stats.mtimeMs };
+    fallbackCandidates.push(record);
+    if (looksLikeUnmangledRuntimeAuthReexport(candidatePath)) {
+      wrapperCandidates.push(record);
+    }
+  }
+  const pool = wrapperCandidates.length > 0 ? wrapperCandidates : fallbackCandidates;
+  if (pool.length === 0) return undefined;
+  pool.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return pool[0].path;
+}
+
+function looksLikeUnmangledRuntimeAuthReexport(candidatePath: string): boolean {
+  let source: string;
+  try {
+    source = fs.readFileSync(candidatePath, "utf8");
+  } catch {
+    return false;
+  }
+  // The bundler emits two chunk shapes for runtime-model-auth.runtime: the
+  // content chunk uses mangled aliases (`export { getRuntimeAuthForModel as n
+  // }`); the thin re-export wrapper exposes the original identifiers
+  // (`export { getRuntimeAuthForModel }`). Only the wrapper is safe to load
+  // via a runtime path, because the rest of the SDK destructures by original
+  // names.
+  return /\bgetRuntimeAuthForModel\s*[,}]/.test(source);
 }
 
 async function loadRuntimeModelAuthModule(): Promise<RuntimeModelAuthModule> {
