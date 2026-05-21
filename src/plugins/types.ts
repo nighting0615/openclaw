@@ -1954,6 +1954,8 @@ export type PluginCommandContext = {
   sessionFile?: string;
   /** Raw command arguments after the command name */
   args?: string;
+  /** Incoming message timestamp in Unix milliseconds when the channel provides it. */
+  timestamp?: number;
   /** The full normalized command body */
   commandBody: string;
   /** Current OpenClaw configuration */

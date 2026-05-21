@@ -3,12 +3,21 @@ import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import setupPlugin from "./setup-api.js";
 
-const { createAcpxRuntimeServiceMock, tryDispatchAcpReplyHookMock, handleTaskCommandMock } =
-  vi.hoisted(() => ({
-    createAcpxRuntimeServiceMock: vi.fn(),
-    tryDispatchAcpReplyHookMock: vi.fn(),
-    handleTaskCommandMock: vi.fn(),
-  }));
+const {
+  createAcpxRuntimeServiceMock,
+  tryDispatchAcpReplyHookMock,
+  handleTaskCommandMock,
+  handleExcerptCommandMock,
+  handleDiaryCommandMock,
+  handleHabitCommandMock,
+} = vi.hoisted(() => ({
+  createAcpxRuntimeServiceMock: vi.fn(),
+  tryDispatchAcpReplyHookMock: vi.fn(),
+  handleTaskCommandMock: vi.fn(),
+  handleExcerptCommandMock: vi.fn(),
+  handleDiaryCommandMock: vi.fn(),
+  handleHabitCommandMock: vi.fn(),
+}));
 
 vi.mock("./register.runtime.js", () => ({
   createAcpxRuntimeService: createAcpxRuntimeServiceMock,
@@ -20,6 +29,15 @@ vi.mock("openclaw/plugin-sdk/acp-runtime-backend", () => ({
 
 vi.mock("./src/task-command.js", () => ({
   handleTaskCommand: handleTaskCommandMock,
+}));
+
+vi.mock("./src/excerpt-command.js", () => ({
+  handleExcerptCommand: handleExcerptCommandMock,
+}));
+
+vi.mock("./src/diary-command.js", () => ({
+  handleDiaryCommand: handleDiaryCommandMock,
+  handleHabitCommand: handleHabitCommandMock,
 }));
 
 import plugin from "./index.js";
@@ -47,7 +65,7 @@ describe("acpx plugin", () => {
     vi.clearAllMocks();
   });
 
-  it("registers the runtime service, task command, and reply_dispatch hook", () => {
+  it("registers the runtime service, native commands, and reply_dispatch hook", () => {
     const service = { id: "acpx-service", start: vi.fn() };
     createAcpxRuntimeServiceMock.mockReturnValue(service);
 
@@ -70,6 +88,30 @@ describe("acpx plugin", () => {
       acceptsArgs: true,
       requireAuth: true,
       handler: handleTaskCommandMock,
+    });
+    expect(api.registerCommand).toHaveBeenCalledWith({
+      name: "excerpt",
+      description: "Append a book excerpt without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      nativeProgressMessages: { default: "📖 正在录入书摘…" },
+      handler: handleExcerptCommandMock,
+    });
+    expect(api.registerCommand).toHaveBeenCalledWith({
+      name: "diary",
+      description: "Write Obsidian diary entries without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      nativeProgressMessages: { default: "📝 正在写入日记…" },
+      handler: handleDiaryCommandMock,
+    });
+    expect(api.registerCommand).toHaveBeenCalledWith({
+      name: "habit",
+      description: "Record Obsidian daily habits without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      nativeProgressMessages: { default: "✅ 正在记录打卡…" },
+      handler: handleHabitCommandMock,
     });
     expect(api.on).toHaveBeenCalledWith("reply_dispatch", tryDispatchAcpReplyHookMock);
   });

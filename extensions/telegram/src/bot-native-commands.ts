@@ -1379,6 +1379,7 @@ export const registerTelegramNativeCommands = ({
             sessionKey: route.sessionKey,
             sessionId: sessionFileContext.sessionId,
             sessionFile: sessionFileContext.sessionFile,
+            timestamp: msg.date ? msg.date * 1000 : undefined,
             commandBody,
             config: runtimeCfg,
             from,

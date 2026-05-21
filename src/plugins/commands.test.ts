@@ -593,11 +593,13 @@ describe("registerPluginCommand", () => {
 
   it("does not expose owner status to normal plugin commands", async () => {
     let observedOwnerStatus: boolean | undefined;
+    let observedTimestamp: number | undefined;
     registerPluginCommand("demo-plugin", {
       name: "voice",
       description: "Voice command",
       handler: async (ctx) => {
         observedOwnerStatus = ctx.senderIsOwner;
+        observedTimestamp = ctx.timestamp;
         return { text: "ok" };
       },
     });
@@ -608,11 +610,13 @@ describe("registerPluginCommand", () => {
       channel: "telegram",
       isAuthorizedSender: true,
       senderIsOwner: true,
+      timestamp: 1779320473000,
       commandBody: "/voice",
       config: {},
     });
 
     expect(observedOwnerStatus).toBeUndefined();
+    expect(observedTimestamp).toBe(1779320473000);
   });
 
   it("allows command owners to run scoped plugin commands without gateway scopes", async () => {

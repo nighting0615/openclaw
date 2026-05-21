@@ -1,6 +1,7 @@
 import { tryDispatchAcpReplyHook } from "openclaw/plugin-sdk/acp-runtime-backend";
 import { createAcpxRuntimeService } from "./register.runtime.js";
 import type { OpenClawPluginApi } from "./runtime-api.js";
+import { handleDiaryCommand, handleHabitCommand } from "./src/diary-command.js";
 import { handleExcerptCommand } from "./src/excerpt-command.js";
 import { handleTaskCommand } from "./src/task-command.js";
 
@@ -28,6 +29,22 @@ const plugin = {
       requireAuth: true,
       nativeProgressMessages: { default: "📖 正在录入书摘…" },
       handler: handleExcerptCommand,
+    });
+    api.registerCommand({
+      name: "diary",
+      description: "Write Obsidian diary entries without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      nativeProgressMessages: { default: "📝 正在写入日记…" },
+      handler: handleDiaryCommand,
+    });
+    api.registerCommand({
+      name: "habit",
+      description: "Record Obsidian daily habits without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      nativeProgressMessages: { default: "✅ 正在记录打卡…" },
+      handler: handleHabitCommand,
     });
     api.on("reply_dispatch", tryDispatchAcpReplyHook);
   },

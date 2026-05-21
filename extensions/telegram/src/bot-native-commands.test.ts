@@ -714,10 +714,11 @@ describe("registerTelegramNativeCommands", () => {
   it("forwards direct-message binding context to Telegram plugin commands", async () => {
     const { handler } = registerPlugCommand();
 
-    await handler(createPrivateCommandContext({ chatId: 100, userId: 200 }));
+    await handler(createPrivateCommandContext({ chatId: 100, userId: 200, date: 1779320473 }));
 
     const commandParams = firstExecutePluginCommandParams();
     expect(commandParams.channel).toBe("telegram");
+    expect(commandParams.timestamp).toBe(1779320473000);
     expect(commandParams.accountId).toBe("default");
     expect(commandParams.from).toBe("telegram:100");
     expect(commandParams.to).toBe("telegram:100");
