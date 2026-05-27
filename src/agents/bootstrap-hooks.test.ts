@@ -44,4 +44,21 @@ describe("applyBootstrapHookOverrides", () => {
     expect(updated).toHaveLength(2);
     expect(updated[1]?.path).toBe("/tmp/EXTRA.md");
   });
+
+  it("passes the trusted sender id into bootstrap hook context", async () => {
+    let observedSenderId: string | null | undefined;
+    registerInternalHook("agent:bootstrap", (event) => {
+      const context = event.context as AgentBootstrapHookContext;
+      observedSenderId = context.senderId;
+    });
+
+    await applyBootstrapHookOverrides({
+      files: [makeFile()],
+      workspaceDir: "/tmp",
+      sessionKey: "agent:main:telegram:group:-5137556444",
+      senderId: "109950863",
+    });
+
+    expect(observedSenderId).toBe("109950863");
+  });
 });

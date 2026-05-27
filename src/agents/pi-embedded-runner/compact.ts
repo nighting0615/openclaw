@@ -659,6 +659,7 @@ async function compactEmbeddedPiSessionDirectOnce(
             sessionKey: params.sessionKey,
             sessionId: params.sessionId,
             agentId: effectiveSkillAgentId,
+            senderId: params.senderId,
             warn: makeBootstrapWarn({
               sessionLabel,
               warn: (message) => log.warn(message),
