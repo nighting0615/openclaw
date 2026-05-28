@@ -108,6 +108,44 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(decision).toEqual({ action: "pass" });
   });
 
+  it("retries venue-rule answers that defer source lookup", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "共青森林公园可以自己带车骑行吗",
+      assistantText:
+        "这个我不确定。我没有现成可靠的来源；我用 web_search 搜一下公园近期公告，但只能给参考。要我搜一下吗？",
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "deferred_source_lookup",
+    });
+  });
+
+  it("accepts venue-rule uncertainty when it states the missing source without deferring lookup", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "共青森林公园可以自己带车骑行吗",
+      assistantText:
+        "这个我不确定。当前对话里没有任何工具结果或可信资料支撑，缺少公园官方公告或近期游客反馈。",
+      attempt: {},
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("treats venue permission claims as mutable facts instead of route claims", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "共青森林公园可以自己带车骑行吗",
+      assistantText: "共青森林公园允许游客自带自行车入园。",
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "unsupported_mutable_fact",
+    });
+  });
+
   it("does not treat generic web search as map evidence for location claims", () => {
     const decision = evaluateEvidenceGuard({
       prompt: "家附近的骑行道",
@@ -268,7 +306,13 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
     expect(result.payloads).toEqual([
       {
-        text: "我没有可验证来源，不能把这个当确定事实说。请让我先查来源，或提供可核验材料。",
+        text: [
+          "这条还没查证完成；当前没有地图依据可以支撑地点、路线、距离或耗时说法。",
+          "",
+          "当前状态：没有匹配当前地点的地图、地理编码或路线工具结果。",
+          "缺少：地图 POI、路线、距离或耗时结果。",
+          "下一步：先调用地图/路线工具，再基于结果回答；工具没有结果就明确说查不到。",
+        ].join("\n"),
         isError: true,
       },
     ]);
