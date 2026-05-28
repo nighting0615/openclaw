@@ -19,10 +19,18 @@
     "webService.defaultOriginAddress": {
       "label": "Default origin address",
       "help": "Default home/base address for nearby and route queries."
+    },
+    "webService.defaultWeatherCity": {
+      "label": "Default weather city",
+      "help": "Default city/adcode for weather queries."
+    },
+    "webService.stateDir": {
+      "label": "AMap state directory",
+      "help": "Directory for AMap weather cache and quota usage files."
     }
   },
   "contracts": {
-    "tools": ["amap_geocode", "amap_search_around", "amap_route"]
+    "tools": ["amap_geocode", "amap_search_around", "amap_route", "amap_weather"]
   },
   "configSchema": {
     "type": "object",
@@ -41,8 +49,23 @@
           "defaultOriginAddress": {
             "type": "string"
           },
+          "defaultWeatherCity": {
+            "type": "string"
+          },
           "baseUrl": {
             "type": "string"
+          },
+          "stateDir": {
+            "type": "string"
+          },
+          "weatherCacheTtlMinutes": {
+            "type": "number"
+          },
+          "weatherMonthlyQuota": {
+            "type": "number"
+          },
+          "weatherQuotaWarnRatio": {
+            "type": "number"
           }
         }
       }

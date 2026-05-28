@@ -1,9 +1,20 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "./index.js";
 
-function createAmapApi() {
+const tempDirs: string[] = [];
+
+async function createTempDir(): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "openclaw-amap-test-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function createAmapApi(webServiceOverrides: Record<string, unknown> = {}) {
   const tools: AnyAgentTool[] = [];
   const api = createTestPluginApi({
     id: "amap",
@@ -18,6 +29,11 @@ function createAmapApi() {
                 apiKey: "test-key",
                 defaultCity: "上海",
                 defaultOriginAddress: "上海市浦东新区东波路49弄",
+                defaultWeatherCity: "310115",
+                weatherCacheTtlMinutes: 240,
+                weatherMonthlyQuota: 5000,
+                weatherQuotaWarnRatio: 0.8,
+                ...webServiceOverrides,
               },
             },
           },
@@ -49,9 +65,11 @@ function mockJsonResponse(payload: unknown): Response {
 describe("amap plugin", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    const dirs = tempDirs.splice(0);
+    return Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it("registers geocode, nearby search, and route tools", () => {
+  it("registers geocode, nearby search, route, and weather tools", () => {
     const { api, tools } = createAmapApi();
 
     plugin.register(api);
@@ -60,6 +78,7 @@ describe("amap plugin", () => {
       "amap_geocode",
       "amap_search_around",
       "amap_route",
+      "amap_weather",
     ]);
   });
 
@@ -206,6 +225,101 @@ describe("amap plugin", () => {
     expect(details.route.paths[0]?.steps[0]).toMatchObject({
       distanceMeters: "500",
       durationSeconds: "120",
+    });
+  });
+
+  it("queries weather once and reuses the TTL cache without spending usage", async () => {
+    const stateDir = await createTempDir();
+    const { api, tools } = createAmapApi({ stateDir });
+    plugin.register(api);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockJsonResponse({
+        status: "1",
+        infocode: "10000",
+        forecasts: [
+          {
+            province: "上海",
+            city: "浦东新区",
+            adcode: "310115",
+            reporttime: "2026-05-28 11:00:00",
+            casts: [
+              {
+                date: new Date().toISOString().slice(0, 10),
+                dayweather: "阴",
+                nightweather: "阴",
+                daytemp: "28",
+                nighttemp: "21",
+                daywind: "北",
+                nightwind: "北",
+                daypower: "1-3",
+                nightpower: "1-3",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const first = await toolByName(tools, "amap_weather").execute?.("call-1", {});
+    const second = await toolByName(tools, "amap_weather").execute?.("call-2", {});
+    const firstDetails = first?.details as { cacheHit: boolean; result: { weatherText: string } };
+    const secondDetails = second?.details as { cacheHit: boolean; result: { weatherText: string } };
+    const usage = JSON.parse(
+      await readFile(path.join(stateDir, "weather", "usage.json"), "utf-8"),
+    ) as { calls: number; monthlyQuota: number; warnAt: number };
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(firstDetails.cacheHit).toBe(false);
+    expect(secondDetails.cacheHit).toBe(true);
+    expect(firstDetails.result.weatherText).toBe("阴 21-28°C");
+    expect(secondDetails.result.weatherText).toBe("阴 21-28°C");
+    expect(usage).toMatchObject({ calls: 1, monthlyQuota: 5000, warnAt: 4000 });
+  });
+
+  it("blocks weather API calls at the monthly quota and serves stale cache", async () => {
+    const stateDir = await createTempDir();
+    const { api, tools } = createAmapApi({
+      stateDir,
+      weatherCacheTtlMinutes: 0,
+      weatherMonthlyQuota: 1,
+    });
+    plugin.register(api);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockJsonResponse({
+        status: "1",
+        forecasts: [
+          {
+            city: "浦东新区",
+            adcode: "310115",
+            casts: [
+              {
+                date: new Date().toISOString().slice(0, 10),
+                dayweather: "多云",
+                nightweather: "阴",
+                daytemp: "29",
+                nighttemp: "20",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await toolByName(tools, "amap_weather").execute?.("call-1", {});
+    const second = await toolByName(tools, "amap_weather").execute?.("call-2", {});
+    const details = second?.details as {
+      cacheHit: boolean;
+      stale: boolean;
+      quotaBlocked: boolean;
+      result: { weatherText: string };
+    };
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(details).toMatchObject({
+      cacheHit: true,
+      stale: true,
+      quotaBlocked: true,
+      result: { weatherText: "多云转阴 20-29°C" },
     });
   });
 });

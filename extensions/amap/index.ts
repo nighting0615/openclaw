@@ -1,3 +1,6 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { jsonResult, readNumberParam, readStringParam } from "openclaw/plugin-sdk/channel-actions";
 import { definePluginEntry, type AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
 import { coerceSecretRef, normalizeSecretInputString } from "openclaw/plugin-sdk/secret-input";
@@ -5,14 +8,23 @@ import { Type } from "typebox";
 
 const DEFAULT_AMAP_BASE_URL = "https://restapi.amap.com";
 const DEFAULT_CITY = "上海";
+const DEFAULT_WEATHER_CITY = "上海";
 const DEFAULT_RADIUS_M = 5000;
 const DEFAULT_LIMIT = 10;
+const DEFAULT_WEATHER_CACHE_TTL_MINUTES = 240;
+const DEFAULT_WEATHER_MONTHLY_QUOTA = 5000;
+const DEFAULT_WEATHER_QUOTA_WARN_RATIO = 0.8;
 
 type AmapWebServiceConfig = {
   apiKey?: unknown;
   defaultCity?: string;
   defaultOriginAddress?: string;
+  defaultWeatherCity?: string;
   baseUrl?: string;
+  stateDir?: string;
+  weatherCacheTtlMinutes?: number;
+  weatherMonthlyQuota?: number;
+  weatherQuotaWarnRatio?: number;
 };
 
 type LngLat = {
@@ -31,6 +43,17 @@ type GeocodeResult = {
 };
 
 type AmapJson = Record<string, unknown>;
+
+type WeatherUsage = {
+  provider: "amap";
+  month: string;
+  calls: number;
+  monthlyQuota: number;
+  warnAt: number;
+  checkedAt?: string;
+  updatedAt?: string;
+  lastCall?: Record<string, unknown>;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,6 +97,61 @@ function resolveDefaultCity(config: AmapWebServiceConfig): string {
 
 function resolveDefaultOriginAddress(config: AmapWebServiceConfig): string | undefined {
   return normalizeSecretInputString(config.defaultOriginAddress);
+}
+
+function resolveDefaultWeatherCity(config: AmapWebServiceConfig): string {
+  return (
+    normalizeSecretInputString(config.defaultWeatherCity) ??
+    normalizeSecretInputString(config.defaultCity) ??
+    DEFAULT_WEATHER_CITY
+  );
+}
+
+function resolveAmapStateDir(config: AmapWebServiceConfig): string {
+  const configured = normalizeSecretInputString(config.stateDir);
+  if (configured) {
+    return configured;
+  }
+  const envStateDir = normalizeSecretInputString(process.env.OPENCLAW_STATE_DIR);
+  if (envStateDir) {
+    return path.join(envStateDir, "amap");
+  }
+  return path.join(os.homedir(), ".openclaw", "amap");
+}
+
+function readPositiveInteger(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.trunc(parsed));
+    }
+  }
+  return fallback;
+}
+
+function resolveWeatherCacheTtlMinutes(config: AmapWebServiceConfig): number {
+  return readPositiveInteger(config.weatherCacheTtlMinutes, DEFAULT_WEATHER_CACHE_TTL_MINUTES);
+}
+
+function resolveWeatherMonthlyQuota(config: AmapWebServiceConfig): number {
+  return readPositiveInteger(config.weatherMonthlyQuota, DEFAULT_WEATHER_MONTHLY_QUOTA);
+}
+
+function resolveWeatherQuotaWarnRatio(config: AmapWebServiceConfig): number {
+  const value = config.weatherQuotaWarnRatio;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(1, value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.min(1, parsed));
+    }
+  }
+  return DEFAULT_WEATHER_QUOTA_WARN_RATIO;
 }
 
 function requireApiKey(config: AmapWebServiceConfig): string {
@@ -321,6 +399,198 @@ function normalizePath(raw: unknown) {
   };
 }
 
+function weatherRangeText(low: unknown, high: unknown): string {
+  const lowText = firstString(low);
+  const highText = firstString(high);
+  if (lowText && highText) {
+    return `${lowText}-${highText}°C`;
+  }
+  if (highText) {
+    return `${highText}°C`;
+  }
+  return lowText ? `${lowText}°C` : "";
+}
+
+function weatherCastLabel(cast: Record<string, unknown>): string {
+  const dayWeather = firstString(cast.dayweather);
+  const nightWeather = firstString(cast.nightweather);
+  if (dayWeather && nightWeather && dayWeather !== nightWeather) {
+    return `${dayWeather}转${nightWeather}`;
+  }
+  return dayWeather ?? nightWeather ?? "天气";
+}
+
+function normalizeWeatherCast(raw: unknown) {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const label = weatherCastLabel(raw);
+  const tempText = weatherRangeText(raw.nighttemp, raw.daytemp);
+  return {
+    date: firstString(raw.date),
+    weatherText: `${label} ${tempText}`.trim(),
+    dayweather: firstString(raw.dayweather),
+    nightweather: firstString(raw.nightweather),
+    daytemp: firstString(raw.daytemp),
+    nighttemp: firstString(raw.nighttemp),
+    daywind: firstString(raw.daywind),
+    nightwind: firstString(raw.nightwind),
+    daypower: firstString(raw.daypower),
+    nightpower: firstString(raw.nightpower),
+  };
+}
+
+function weatherStatePath(config: AmapWebServiceConfig, filename: string): string {
+  return path.join(resolveAmapStateDir(config), "weather", filename);
+}
+
+async function readJsonFile(filePath: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf-8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeJsonFile(filePath: string, payload: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+}
+
+function weatherCacheKey(city: string, extensions: string): string {
+  return `${city.trim()}::${extensions.trim() || "all"}`;
+}
+
+function currentMonth(now: Date): string {
+  return now.toISOString().slice(0, 7);
+}
+
+async function loadWeatherUsage(config: AmapWebServiceConfig, now: Date): Promise<WeatherUsage> {
+  const month = currentMonth(now);
+  const quota = resolveWeatherMonthlyQuota(config);
+  const warnAt = Math.trunc(quota * resolveWeatherQuotaWarnRatio(config));
+  const raw = await readJsonFile(weatherStatePath(config, "usage.json"));
+  const calls =
+    isRecord(raw) && raw.month === month && typeof raw.calls === "number" ? raw.calls : 0;
+  return {
+    provider: "amap",
+    month,
+    calls: Number.isFinite(calls) && calls > 0 ? Math.trunc(calls) : 0,
+    monthlyQuota: quota,
+    warnAt,
+    checkedAt: now.toISOString(),
+  };
+}
+
+function publicWeatherUsage(usage: WeatherUsage) {
+  return {
+    month: usage.month,
+    calls: usage.calls,
+    monthlyQuota: usage.monthlyQuota,
+    warnAt: usage.warnAt,
+    warning: usage.warnAt > 0 && usage.calls >= usage.warnAt,
+  };
+}
+
+async function writeWeatherUsage(config: AmapWebServiceConfig, usage: WeatherUsage): Promise<void> {
+  await writeJsonFile(weatherStatePath(config, "usage.json"), usage);
+}
+
+async function recordWeatherCall(params: {
+  config: AmapWebServiceConfig;
+  usage: WeatherUsage;
+  city: string;
+  extensions: string;
+  now: Date;
+}): Promise<WeatherUsage> {
+  const usage = {
+    ...params.usage,
+    calls: params.usage.calls + 1,
+    updatedAt: params.now.toISOString(),
+    lastCall: {
+      provider: "amap",
+      city: params.city,
+      extensions: params.extensions,
+      source: "amap_weather",
+    },
+  };
+  await writeWeatherUsage(params.config, usage);
+  return usage;
+}
+
+function quotaExceeded(usage: WeatherUsage): boolean {
+  return usage.monthlyQuota > 0 && usage.calls >= usage.monthlyQuota;
+}
+
+function weatherTextForToday(entry: Record<string, unknown>, now: Date): string | undefined {
+  const today = now.toISOString().slice(0, 10);
+  const forecastDays = Array.isArray(entry.forecastDays) ? entry.forecastDays : [];
+  for (const day of forecastDays) {
+    if (isRecord(day) && day.date === today && typeof day.weatherText === "string") {
+      return day.weatherText;
+    }
+  }
+  return undefined;
+}
+
+async function loadWeatherCache(params: {
+  config: AmapWebServiceConfig;
+  city: string;
+  extensions: string;
+  now: Date;
+  requireFresh: boolean;
+}): Promise<Record<string, unknown> | undefined> {
+  const raw = await readJsonFile(weatherStatePath(params.config, "cache.json"));
+  const key = weatherCacheKey(params.city, params.extensions);
+  const entry =
+    isRecord(raw) && isRecord(raw.entries) && isRecord(raw.entries[key])
+      ? raw.entries[key]
+      : undefined;
+  if (!entry) {
+    return undefined;
+  }
+  const entryCity =
+    firstString(entry.queryCity) ?? firstString(entry.adcode) ?? firstString(entry.city);
+  if (
+    entry.provider !== "amap" ||
+    entryCity !== params.city ||
+    entry.extensions !== params.extensions
+  ) {
+    return undefined;
+  }
+  if (!params.requireFresh) {
+    return entry;
+  }
+  const fetchedAt = typeof entry.fetchedAt === "string" ? Date.parse(entry.fetchedAt) : Number.NaN;
+  if (!Number.isFinite(fetchedAt)) {
+    return undefined;
+  }
+  const ttlMs = resolveWeatherCacheTtlMinutes(params.config) * 60 * 1000;
+  if (ttlMs <= 0 || params.now.getTime() - fetchedAt > ttlMs) {
+    return undefined;
+  }
+  return weatherTextForToday(entry, params.now) ? entry : undefined;
+}
+
+async function writeWeatherCache(params: {
+  config: AmapWebServiceConfig;
+  city: string;
+  extensions: string;
+  entry: Record<string, unknown>;
+}): Promise<void> {
+  const filePath = weatherStatePath(params.config, "cache.json");
+  const raw = await readJsonFile(filePath);
+  const entries = isRecord(raw) && isRecord(raw.entries) ? raw.entries : {};
+  await writeJsonFile(filePath, {
+    provider: "amap",
+    updatedAt: new Date().toISOString(),
+    entries: {
+      ...entries,
+      [weatherCacheKey(params.city, params.extensions)]: params.entry,
+    },
+  });
+}
+
 const GeocodeSchema = Type.Object(
   {
     address: Type.String({ description: "Structured address or place name to geocode." }),
@@ -371,6 +641,23 @@ const RouteSchema = Type.Object(
     strategy: Type.Optional(
       Type.Number({
         description: "Driving strategy. For AMap v3 driving only; omit unless needed.",
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const WeatherSchema = Type.Object(
+  {
+    city: Type.Optional(
+      Type.String({
+        description:
+          "AMap weather city/adcode. Omit to use configured defaultWeatherCity/defaultCity.",
+      }),
+    ),
+    extensions: Type.Optional(
+      Type.Union([Type.Literal("all"), Type.Literal("base")], {
+        description: "all returns forecast weather; base returns live weather. Default all.",
       }),
     ),
   },
@@ -536,14 +823,160 @@ function createRouteTool(config: AmapWebServiceConfig): AnyAgentTool {
   };
 }
 
+function normalizeWeatherPayload(params: {
+  city: string;
+  extensions: string;
+  requestUrl: string;
+  payload: AmapJson;
+  fetchedAt: string;
+}) {
+  if (params.extensions === "base") {
+    const lives = Array.isArray(params.payload.lives) ? params.payload.lives : [];
+    const live = isRecord(lives[0]) ? lives[0] : undefined;
+    if (!live) {
+      throw new Error("AMap weather returned no live weather.");
+    }
+    const weather = firstString(live.weather) ?? "天气";
+    const temperature = firstString(live.temperature);
+    const weatherText = `${weather}${temperature ? ` ${temperature}°C` : ""}`.trim();
+    return {
+      provider: "amap",
+      city: firstString(live.city) ?? params.city,
+      adcode: firstString(live.adcode) ?? params.city,
+      province: firstString(live.province),
+      reporttime: firstString(live.reporttime),
+      extensions: params.extensions,
+      requestUrl: params.requestUrl,
+      fetchedAt: params.fetchedAt,
+      weatherText,
+      live: {
+        weather,
+        temperature,
+        winddirection: firstString(live.winddirection),
+        windpower: firstString(live.windpower),
+        humidity: firstString(live.humidity),
+      },
+    };
+  }
+
+  const forecasts = Array.isArray(params.payload.forecasts) ? params.payload.forecasts : [];
+  const forecast = isRecord(forecasts[0]) ? forecasts[0] : {};
+  const casts = Array.isArray(forecast.casts) ? forecast.casts : [];
+  const forecastDays = casts.map(normalizeWeatherCast).filter(Boolean).slice(0, 4);
+  if (forecastDays.length === 0) {
+    throw new Error("AMap weather returned no forecast days.");
+  }
+  return {
+    provider: "amap",
+    city: firstString(forecast.city) ?? params.city,
+    adcode: firstString(forecast.adcode) ?? params.city,
+    province: firstString(forecast.province),
+    reporttime: firstString(forecast.reporttime),
+    extensions: params.extensions,
+    requestUrl: params.requestUrl,
+    fetchedAt: params.fetchedAt,
+    weatherText: forecastDays[0]?.weatherText,
+    forecastDays,
+  };
+}
+
+function createWeatherTool(config: AmapWebServiceConfig): AnyAgentTool {
+  return {
+    name: "amap_weather",
+    label: "AMap Weather",
+    description:
+      "Query AMap weather by city/adcode with built-in TTL cache and monthly quota guard. Use for current or forecast weather answers that need a real source.",
+    parameters: WeatherSchema,
+    execute: async (_toolCallId, rawParams, signal) => {
+      const params = rawParams as Record<string, unknown>;
+      const city = readStringParam(params, "city") ?? resolveDefaultWeatherCity(config);
+      const extensions = readStringParam(params, "extensions") ?? "all";
+      if (!["all", "base"].includes(extensions)) {
+        throw new Error(`Unsupported weather extensions: ${extensions}`);
+      }
+      const now = new Date();
+      const freshCache = await loadWeatherCache({
+        config,
+        city,
+        extensions,
+        now,
+        requireFresh: true,
+      });
+      let usage = await loadWeatherUsage(config, now);
+      await writeWeatherUsage(config, usage);
+      if (freshCache) {
+        return jsonResult({
+          source: "amap",
+          tool: "amap_weather",
+          cacheHit: true,
+          query: { city, extensions },
+          usage: publicWeatherUsage(usage),
+          result: freshCache,
+        });
+      }
+
+      if (quotaExceeded(usage)) {
+        const staleCache = await loadWeatherCache({
+          config,
+          city,
+          extensions,
+          now,
+          requireFresh: false,
+        });
+        if (staleCache) {
+          return jsonResult({
+            source: "amap",
+            tool: "amap_weather",
+            cacheHit: true,
+            stale: true,
+            quotaBlocked: true,
+            query: { city, extensions },
+            usage: publicWeatherUsage(usage),
+            result: staleCache,
+          });
+        }
+        throw new Error(
+          "AMap weather monthly quota guard blocked this request and no cache is available.",
+        );
+      }
+
+      usage = await recordWeatherCall({ config, usage, city, extensions, now });
+      const { payload, requestUrl } = await fetchAmapJson({
+        config,
+        path: "/v3/weather/weatherInfo",
+        query: { city, extensions },
+        signal,
+      });
+      const result = normalizeWeatherPayload({
+        city,
+        extensions,
+        requestUrl,
+        payload,
+        fetchedAt: now.toISOString(),
+      });
+      const cacheEntry = { ...result, queryCity: city };
+      await writeWeatherCache({ config, city, extensions, entry: cacheEntry });
+      return jsonResult({
+        source: "amap",
+        tool: "amap_weather",
+        cacheHit: false,
+        query: { city, extensions },
+        usage: publicWeatherUsage(usage),
+        result: cacheEntry,
+      });
+    },
+  };
+}
+
 export default definePluginEntry({
   id: "amap",
   name: "AMap Web Service Plugin",
-  description: "AMap geocoding, nearby search, and route planning tools.",
+  description: "AMap geocoding, nearby search, route planning, and weather tools.",
   register(api) {
     const config = resolveAmapConfig(api.config);
     api.registerTool(createGeocodeTool(config));
     api.registerTool(createSearchAroundTool(config));
     api.registerTool(createRouteTool(config));
+    api.registerTool(createWeatherTool(config));
   },
 });
