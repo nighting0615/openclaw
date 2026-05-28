@@ -75,6 +75,16 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     return call[0] as { prompt?: string };
   }
 
+  function mapToolResultMessage(
+    text: string,
+  ): EmbeddedRunAttemptResult["messagesSnapshot"][number] {
+    return {
+      role: "toolResult",
+      toolName: "amap_route",
+      content: [{ type: "text", text }],
+    } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number];
+  }
+
   it("flags invented post-error self explanations", () => {
     const decision = evaluateEvidenceGuard({
       prompt: "你哪来的印象？",
@@ -96,6 +106,76 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     });
 
     expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("does not treat generic web search as map evidence for location claims", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "家附近的骑行道",
+      assistantText: "前滩友城公园离你家 3 公里，开车 10 分钟，是最近选择。",
+      attempt: { toolMetas: [{ toolName: "web_search" }] },
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "unsupported_location_claim",
+    });
+  });
+
+  it("accepts location claims with current map tool evidence", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "家附近的骑行道",
+      assistantText: "高德路线结果显示，前滩友城公园开车大约 30 分钟。",
+      attempt: { toolMetas: [{ toolName: "amap_route" }] },
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("accepts location claims with recent matching same-session map evidence", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "家到前滩友城公园骑行多久？给我距离、预计耗时、主要路段，必须基于地图路线。",
+      assistantText: "高德骑行路线显示，到前滩友城公园约 19.8 公里，预计 79 分钟。",
+      attempt: {
+        toolMetas: [],
+        messagesSnapshot: [
+          mapToolResultMessage(
+            JSON.stringify({
+              source: "amap",
+              tool: "amap_route",
+              route: { distanceMeters: 19826, durationSeconds: 4758 },
+              destination: { geocode: { formattedAddress: "上海市浦东新区前滩友城公园" } },
+            }),
+          ),
+        ],
+      },
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("rejects location claims when recent map evidence is for a different place", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "家到前滩友城公园骑行多久？给我距离、预计耗时、主要路段，必须基于地图路线。",
+      assistantText: "高德骑行路线显示，到前滩友城公园约 19.8 公里，预计 79 分钟。",
+      attempt: {
+        toolMetas: [],
+        messagesSnapshot: [
+          mapToolResultMessage(
+            JSON.stringify({
+              source: "amap",
+              tool: "amap_route",
+              route: { distanceMeters: 60800, durationSeconds: 14400 },
+              destination: { geocode: { formattedAddress: "上海市浦东新区滴水湖" } },
+            }),
+          ),
+        ],
+      },
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "unsupported_location_claim",
+    });
   });
 
   it("retries unsupported location recommendations before final delivery", async () => {

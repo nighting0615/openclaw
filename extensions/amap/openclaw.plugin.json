@@ -1,0 +1,51 @@
+{
+  "id": "amap",
+  "activation": {
+    "onStartup": false
+  },
+  "providerAuthEnvVars": {
+    "amap": ["AMAP_WEB_SERVICE_KEY", "AMAP_API_KEY"]
+  },
+  "uiHints": {
+    "webService.apiKey": {
+      "label": "AMap Web Service API Key",
+      "help": "高德 Web服务 API key. Fallback: AMAP_WEB_SERVICE_KEY or AMAP_API_KEY.",
+      "sensitive": true
+    },
+    "webService.defaultCity": {
+      "label": "Default city",
+      "help": "Default city for geocoding and POI search."
+    },
+    "webService.defaultOriginAddress": {
+      "label": "Default origin address",
+      "help": "Default home/base address for nearby and route queries."
+    }
+  },
+  "contracts": {
+    "tools": ["amap_geocode", "amap_search_around", "amap_route"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "webService": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "apiKey": {
+            "type": ["string", "object"]
+          },
+          "defaultCity": {
+            "type": "string"
+          },
+          "defaultOriginAddress": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
