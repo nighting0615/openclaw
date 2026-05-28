@@ -5,6 +5,7 @@ import { makeAttemptResult } from "./run.overflow-compaction.fixture.js";
 import {
   loadRunOverflowCompactionHarness,
   mockedClassifyFailoverReason,
+  mockedBuildEmbeddedRunPayloads,
   mockedGlobalHookRunner,
   mockedLog,
   mockedRunEmbeddedAttempt,
@@ -12,6 +13,7 @@ import {
   overflowBaseRunParams,
   resetRunOverflowCompactionHarnessMocks,
 } from "./run.overflow-compaction.harness.js";
+import { EVIDENCE_GUARD_RETRY_INSTRUCTION, evaluateEvidenceGuard } from "./run/evidence-guard.js";
 import {
   ACK_EXECUTION_FAST_PATH_INSTRUCTION,
   buildAttemptReplayMetadata,
@@ -72,6 +74,127 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     }
     return call[0] as { prompt?: string };
   }
+
+  it("flags invented post-error self explanations", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "你哪来的印象？",
+      assistantText: "我刚才脑子里把临港等同于浦东新区，所以按感觉说了。",
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "invented_self_explanation",
+    });
+  });
+
+  it("accepts source-free post-error explanations when they only state observable facts", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "你哪来的印象？",
+      assistantText: "事实只有：我没有调用工具核距离，也没有可验证来源支持上一条说法。",
+      attempt: {},
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("retries unsupported location recommendations before final delivery", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedBuildEmbeddedRunPayloads.mockImplementation(({ assistantTexts }) =>
+      assistantTexts.map((text) => ({ text })),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["家附近适合骑行的地点不少：三林楔形绿地 10 分钟，滴水湖车程 30 分钟。"],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [
+            {
+              type: "text",
+              text: "家附近适合骑行的地点不少：三林楔形绿地 10 分钟，滴水湖车程 30 分钟。",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["我没有查地图或路网数据，不能确定具体车程。先按未核验处理。"],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [
+            {
+              type: "text",
+              text: "我没有查地图或路网数据，不能确定具体车程。先按未核验处理。",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      prompt: "家附近有什么适合骑行的地点么",
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-evidence-guard-location-retry",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(runAttemptCall(1).prompt).toContain(EVIDENCE_GUARD_RETRY_INSTRUCTION);
+    expectWarnMessageWith("evidence guard requested revision");
+    expect(result.payloads).toEqual([
+      { text: "我没有查地图或路网数据，不能确定具体车程。先按未核验处理。" },
+    ]);
+  });
+
+  it("falls back after a repeated unsupported location claim", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedBuildEmbeddedRunPayloads.mockImplementation(({ assistantTexts }) =>
+      assistantTexts.map((text) => ({ text })),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValue(
+      makeAttemptResult({
+        assistantTexts: ["滴水湖车程 30 分钟，适合周末骑行。"],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [
+            {
+              type: "text",
+              text: "滴水湖车程 30 分钟，适合周末骑行。",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      prompt: "家附近有什么适合骑行的地点么",
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-evidence-guard-location-fallback",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(result.payloads).toEqual([
+      {
+        text: "我没有可验证来源，不能把这个当确定事实说。请让我先查来源，或提供可核验材料。",
+        isError: true,
+      },
+    ]);
+    expect(result.meta.livenessState).toBe("blocked");
+    expectWarnMessageWith("evidence guard blocked final reply");
+  });
 
   it("emits the before_agent_run hook block message as the agent payload", async () => {
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

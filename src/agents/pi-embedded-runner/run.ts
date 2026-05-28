@@ -124,6 +124,7 @@ import { forgetPromptBuildDrainCacheForRun } from "./run/attempt.prompt-helpers.
 import { createEmbeddedRunAuthController } from "./run/auth-controller.js";
 import { resolveAuthProfileFailureReason } from "./run/auth-profile-failure-policy.js";
 import { runEmbeddedAttemptWithBackend } from "./run/backend.js";
+import { evaluateEvidenceGuard, joinEvidenceGuardPayloadText } from "./run/evidence-guard.js";
 import { createFailoverDecisionLogger } from "./run/failover-observation.js";
 import { mergeRetryFailoverReason, resolveRunFailoverDecision } from "./run/failover-policy.js";
 import { hasEmbeddedRunConfiguredModelFallbacks } from "./run/fallbacks.js";
@@ -1031,6 +1032,7 @@ export async function runEmbeddedPiAgent(
       let planningOnlyRetryAttempts = 0;
       let reasoningOnlyRetryAttempts = 0;
       let emptyResponseRetryAttempts = 0;
+      let evidenceGuardRetryAttempts = 0;
       let compactionContinuationRetryAttempts = 0;
       let sameModelIdleTimeoutRetries = 0;
       // Cost-runaway breaker for #76293. State lives at the run-loop level
@@ -1066,6 +1068,7 @@ export async function runEmbeddedPiAgent(
       let planningOnlyRetryInstruction: string | null = null;
       let reasoningOnlyRetryInstruction: string | null = null;
       let emptyResponseRetryInstruction: string | null = null;
+      let evidenceGuardRetryInstruction: string | null = null;
       let compactionContinuationRetryInstruction: string | null = null;
       let nextAttemptPromptOverride: string | null = null;
       const ackExecutionFastPathInstruction = resolveAckExecutionFastPathInstruction({
@@ -1322,6 +1325,7 @@ export async function runEmbeddedPiAgent(
             planningOnlyRetryInstruction,
             reasoningOnlyRetryInstruction,
             emptyResponseRetryInstruction,
+            evidenceGuardRetryInstruction,
             compactionContinuationRetryInstruction,
           ].filter(
             (value): value is string => typeof value === "string" && value.trim().length > 0,
@@ -3133,6 +3137,74 @@ export async function runEmbeddedPiAgent(
           const terminalPayloads = emptyAssistantReplyIsSilent
             ? [{ text: SILENT_REPLY_TOKEN }]
             : payloadsForTerminalPath;
+          const evidenceGuardDecision = evaluateEvidenceGuard({
+            prompt: params.prompt,
+            assistantText: joinEvidenceGuardPayloadText(terminalPayloads),
+            retryAttempts: resolveAttemptReplayMetadata(attempt).hadPotentialSideEffects
+              ? 1
+              : evidenceGuardRetryAttempts,
+            trigger: params.trigger,
+            attempt,
+          });
+          if (evidenceGuardDecision.action === "revise") {
+            evidenceGuardRetryAttempts += 1;
+            evidenceGuardRetryInstruction = evidenceGuardDecision.retryInstruction;
+            log.warn(
+              `evidence guard requested revision: runId=${params.runId} sessionId=${params.sessionId} ` +
+                `kind=${evidenceGuardDecision.kind} attempts=${evidenceGuardRetryAttempts}/1 ` +
+                `reason=${evidenceGuardDecision.reason}`,
+            );
+            continue;
+          }
+          if (evidenceGuardDecision.action === "fallback") {
+            const guardReplayInvalid = resolveReplayInvalidForAttempt(evidenceGuardDecision.text);
+            const guardLivenessState: EmbeddedRunLivenessState = "blocked";
+            attempt.setTerminalLifecycleMeta?.({
+              replayInvalid: guardReplayInvalid,
+              livenessState: guardLivenessState,
+              stopReason,
+              yielded: attempt.yieldDetected === true,
+            });
+            log.warn(
+              `evidence guard blocked final reply: runId=${params.runId} sessionId=${params.sessionId} ` +
+                `kind=${evidenceGuardDecision.kind} reason=${evidenceGuardDecision.reason}`,
+            );
+            return {
+              payloads: [
+                {
+                  text: evidenceGuardDecision.text,
+                  isError: true,
+                },
+              ],
+              ...(attempt.diagnosticTrace
+                ? { diagnosticTrace: freezeDiagnosticTraceContext(attempt.diagnosticTrace) }
+                : {}),
+              meta: {
+                durationMs: Date.now() - started,
+                agentMeta,
+                aborted,
+                systemPromptReport: attempt.systemPromptReport,
+                finalPromptText: attempt.finalPromptText,
+                finalAssistantVisibleText,
+                finalAssistantRawText,
+                replayInvalid: guardReplayInvalid,
+                livenessState: guardLivenessState,
+                toolSummary: attemptToolSummary,
+                ...(failureSignal ? { failureSignal } : {}),
+                agentHarnessResultClassification: attempt.agentHarnessResultClassification,
+                ...(attempt.yieldDetected ? { yielded: true } : {}),
+                stopReason,
+              },
+              didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
+              messagingToolSentTexts: attempt.messagingToolSentTexts,
+              messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
+              messagingToolSentTargets: attempt.messagingToolSentTargets,
+              messagingToolSourceReplyPayloads: attempt.messagingToolSourceReplyPayloads,
+              heartbeatToolResponse: attempt.heartbeatToolResponse,
+              successfulCronAdds: attempt.successfulCronAdds,
+            };
+          }
           attempt.setTerminalLifecycleMeta?.({
             replayInvalid,
             livenessState,
