@@ -1296,6 +1296,31 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(editMessageTelegram).not.toHaveBeenCalled();
   });
 
+  it("keeps answer partials out of progress drafts before final delivery", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ dispatcherOptions, replyOptions }) => {
+        await replyOptions?.onPartialReply?.({ text: "Unreviewed " });
+        await replyOptions?.onPartialReply?.({ text: "Unreviewed answer draft" });
+        await dispatcherOptions.deliver({ text: "Reviewed final answer" }, { kind: "final" });
+        return { queuedFinal: true };
+      },
+    );
+
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "progress",
+      telegramCfg: { streaming: { mode: "progress", progress: { label: "Processing" } } },
+    });
+
+    expect(answerDraftStream.update).toHaveBeenCalledWith("Processing");
+    expect(answerDraftStream.update).not.toHaveBeenCalledWith("Unreviewed ");
+    expect(answerDraftStream.update).not.toHaveBeenCalledWith("Unreviewed answer draft");
+    expect(answerDraftStream.update).not.toHaveBeenCalledWith("Reviewed final answer");
+    expect(answerDraftStream.clear).toHaveBeenCalledTimes(1);
+    expectDeliveredReply(0, { text: "Reviewed final answer" });
+  });
+
   it("uses the transcript final when progress-mode final text is truncated", async () => {
     setupDraftStreams({ answerMessageId: 2001 });
     const fullAnswer =

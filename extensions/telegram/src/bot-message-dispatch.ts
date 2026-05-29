@@ -791,6 +791,10 @@ export const dispatchTelegramMessage = async ({
     const split = splitTextIntoLaneSegments(update, isReasoning);
     for (const segment of split.segments) {
       if (segment.lane === "answer") {
+        if (streamMode === "progress") {
+          await pushStreamToolProgress();
+          continue;
+        }
         await prepareAnswerLaneForText();
       }
       if (segment.lane === "reasoning") {
