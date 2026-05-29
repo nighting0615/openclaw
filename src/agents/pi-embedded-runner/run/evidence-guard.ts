@@ -41,13 +41,19 @@ const GENERIC_CJK_EVIDENCE_TOKEN_RE =
 const RECENT_MAP_EVIDENCE_MESSAGE_LIMIT = 16;
 
 const MUTABLE_FACT_PROMPT_RE =
-  /(?:最新|最近|今天|昨日|昨天|明天|现在|目前|实时|价格|票价|政策|规则|规定|公告|法律|医疗|天气|股票|汇率|CEO|总统|版本|发布|开放|营业|倒闭|停运|可以|可否|能不能|允许|禁止|自带|带车|入园|收费|预约|推荐.*(?:餐厅|景点|产品|店)|查|搜|核|current|latest|recent|today|price|policy|rule|law|medical|weather|stock|exchange rate|release|open|closed|allow|allowed|permit|permitted|ban|recommend)/i;
+  /(?:最新|最近|今天|昨日|昨天|明天|现在|目前|实时|价格|票价|政策|规则|规定|公告|法律|医疗|天气|股票|汇率|CEO|总统|版本|发布|开放|营业|倒闭|停运|可否|能不能|允许|禁止|自带|带车|入园|收费|预约|推荐.*(?:餐厅|景点|产品|店)|(?:地舒单抗|普罗力|处方药|用药|药物|治疗方案|副作用|禁忌)[^。！？.!?\n]{0,24}(?:可以|可否|能不能|能用|用吗|用量|剂量|安全|副作用|禁忌|治疗)|(?:帮我|替我|给我|去)?(?:搜|搜索|核实|确认)(?:一下)?(?:最新|近期|官方|公告|价格|票价|政策|规则|规定|营业|开放|允许|禁止)?|current|latest|recent|today|price|policy|rule|law|medical|weather|stock|exchange rate|release|open|closed|allow|allowed|permit|permitted|ban|recommend)/i;
 
 const MUTABLE_FACT_CLAIM_RE =
   /(?:\d|20\d{2}|目前|现在|已(?:经)?|开放|关闭|营业|停运|允许|禁止|可以|不能|不得|自带|带车|入园|收费|预约|规定|规则|公告|价格|票价|美元|人民币|公里|分钟|小时|排名|CEO|总统|版本|发布|支持|current|currently|latest|released|open|closed|price|rank|version|allow|allowed|permit|permitted|ban|banned)/i;
 
 const SOURCE_LOOKUP_DEFER_RE =
   /(?:要(?:我|不要我)?(?:帮你)?(?:先)?(?:搜|查|核|核实|确认)(?:一下)?吗|(?:我|这边)?可以(?:帮你)?(?:先)?(?:搜|查|核|核实|确认)(?:一下)?|请让我(?:先)?(?:搜|查|核|核实|确认)|let me (?:search|look up|check)|shall I (?:search|look up|check)|do you want me to (?:search|look up|check))/i;
+
+const CURRENT_SOURCE_MEDIA_RE =
+  /(?:\[media attached:[^\n]*(?:image|pdf|document|file)|<media:(?:image|document|file)|media:\/\/inbound\/[^\s\]]+\.(?:jpe?g|png|webp|heic|pdf)|telegram:file\/[^\s\]]+)/i;
+
+const CURRENT_SOURCE_MATERIAL_REFERENCE_RE =
+  /(?:(?:这张|这个|这份|图上|图片|照片|截图|报告|单据|处方|化验单|检查单|病历|发票|合同|表格|文档|附件|医生开的)[^。！？.!?\n]{0,32}(?:看|读|写|标|显示|是多少|什么意思|怎么理解|开的|值|T值|t值|剂量|用法)|(?:看|读|解释|帮我看|帮我读)[^。！？.!?\n]{0,24}(?:图|图片|照片|截图|报告|单据|处方|化验单|检查单|病历|附件)|(?:T值|t值|BMD|骨密度报告|处方内容|检查结果))/i;
 
 type EvidenceGuardViolationKind =
   | "invented_self_explanation"
@@ -66,6 +72,12 @@ export type EvidenceGuardDecision =
   | {
       action: "fallback";
       kind: EvidenceGuardViolationKind;
+      reason: string;
+      text: string;
+    }
+  | {
+      action: "annotate";
+      kind: Exclude<EvidenceGuardViolationKind, "invented_self_explanation">;
       reason: string;
       text: string;
     };
@@ -104,6 +116,21 @@ function hasCurrentTurnToolEvidence(attempt: EvidenceGuardAttempt): boolean {
   return (attempt.toolMetas ?? []).some(
     (entry) => typeof entry.toolName === "string" && entry.toolName.trim().length > 0,
   );
+}
+
+function hasCurrentSourceMaterial(params: {
+  prompt: string;
+  attempt: EvidenceGuardAttempt;
+}): boolean {
+  const hasCurrentMaterialReference = (text: string): boolean =>
+    CURRENT_SOURCE_MEDIA_RE.test(text) && CURRENT_SOURCE_MATERIAL_REFERENCE_RE.test(text);
+  if (hasCurrentMaterialReference(params.prompt)) {
+    return true;
+  }
+  return (params.attempt.messagesSnapshot ?? []).slice(-4).some((message) => {
+    const text = messageText(message);
+    return hasCurrentMaterialReference(text);
+  });
 }
 
 function hasCurrentTurnMapEvidence(attempt: EvidenceGuardAttempt): boolean {
@@ -339,6 +366,53 @@ function fallbackTextFor(prompt: string, kind: EvidenceGuardViolationKind): stri
   ].join("\n");
 }
 
+function annotationTextFor(prompt: string, kind: EvidenceGuardViolationKind): string {
+  if (!containsCjk(prompt)) {
+    if (kind === "deferred_source_lookup") {
+      return "Source/confidence: this reply did not complete an external lookup. Treat any factual recommendation above as unverified until checked against an appropriate source.";
+    }
+    if (kind === "unsupported_location_claim") {
+      return "Source/confidence: no matching map/geocoding/routing result was available for the route, distance, travel-time, or nearby ranking above. Treat those details as unverified until checked in a map app.";
+    }
+    return "Source/confidence: this reply was not backed by an external source/tool result. Treat time-sensitive, policy, price, medical, or recommendation details as unverified unless you check an authoritative source.";
+  }
+
+  if (kind === "deferred_source_lookup") {
+    return "来源/置信度：这次没有实际完成外部查证；上面的事实性建议只能当未核验参考，需要时应直接查官方或近期来源。";
+  }
+  if (kind === "unsupported_location_claim") {
+    return "来源/置信度：上面的地点、距离、耗时或远近排序没有匹配的地图/路线结果支撑，请按未核验参考处理，准确出行以地图为准。";
+  }
+  return "来源/置信度：上面的时效、规则、价格、政策、医疗或推荐类信息没有外部来源工具结果支撑，只能当当前对话/常识推理参考；涉及决策时以官方、医生或近期可靠来源为准。";
+}
+
+export function appendEvidenceGuardAnnotation(
+  payloads: readonly ReplyPayload[] | undefined,
+  annotationText: string,
+): ReplyPayload[] {
+  const trimmedAnnotation = annotationText.trim();
+  if (!trimmedAnnotation) {
+    return [...(payloads ?? [])];
+  }
+  const result = [...(payloads ?? [])];
+  const targetIndex = result.findLastIndex(
+    (payload) => typeof payload.text === "string" && payload.text.trim().length > 0,
+  );
+  if (targetIndex === -1) {
+    return [{ text: trimmedAnnotation }, ...result];
+  }
+  const target = result[targetIndex];
+  const currentText = typeof target.text === "string" ? target.text.trimEnd() : "";
+  if (currentText.includes(trimmedAnnotation)) {
+    return result;
+  }
+  result[targetIndex] = {
+    ...target,
+    text: `${currentText}\n\n${trimmedAnnotation}`,
+  };
+  return result;
+}
+
 function buildReviseDecision(params: {
   kind: EvidenceGuardViolationKind;
   reason: string;
@@ -346,6 +420,14 @@ function buildReviseDecision(params: {
   prompt: string;
 }): EvidenceGuardDecision {
   if (params.retryAttempts > 0) {
+    if (params.kind !== "invented_self_explanation") {
+      return {
+        action: "annotate",
+        kind: params.kind,
+        reason: params.reason,
+        text: annotationTextFor(params.prompt, params.kind),
+      };
+    }
     return {
       action: "fallback",
       kind: params.kind,
@@ -387,8 +469,10 @@ export function evaluateEvidenceGuard(params: {
   }
 
   const hasToolEvidence = hasCurrentTurnToolEvidence(params.attempt);
+  const hasSourceMaterial = hasCurrentSourceMaterial({ prompt, attempt: params.attempt });
   if (
     !hasToolEvidence &&
+    !hasSourceMaterial &&
     defersSourceLookup(assistantText) &&
     (LOCATION_PROMPT_RE.test(prompt) || MUTABLE_FACT_PROMPT_RE.test(prompt))
   ) {
@@ -424,6 +508,10 @@ export function evaluateEvidenceGuard(params: {
   }
 
   if (hasToolEvidence) {
+    return { action: "pass" };
+  }
+
+  if (hasSourceMaterial) {
     return { action: "pass" };
   }
 

@@ -124,7 +124,11 @@ import { forgetPromptBuildDrainCacheForRun } from "./run/attempt.prompt-helpers.
 import { createEmbeddedRunAuthController } from "./run/auth-controller.js";
 import { resolveAuthProfileFailureReason } from "./run/auth-profile-failure-policy.js";
 import { runEmbeddedAttemptWithBackend } from "./run/backend.js";
-import { evaluateEvidenceGuard, joinEvidenceGuardPayloadText } from "./run/evidence-guard.js";
+import {
+  appendEvidenceGuardAnnotation,
+  evaluateEvidenceGuard,
+  joinEvidenceGuardPayloadText,
+} from "./run/evidence-guard.js";
 import { createFailoverDecisionLogger } from "./run/failover-observation.js";
 import { mergeRetryFailoverReason, resolveRunFailoverDecision } from "./run/failover-policy.js";
 import { hasEmbeddedRunConfiguredModelFallbacks } from "./run/fallbacks.js";
@@ -3134,11 +3138,11 @@ export async function runEmbeddedPiAgent(
             : attempt.yieldDetected
               ? "end_turn"
               : (sessionLastAssistant?.stopReason as string | undefined);
-          const terminalPayloads = emptyAssistantReplyIsSilent
+          let terminalPayloads = emptyAssistantReplyIsSilent
             ? [{ text: SILENT_REPLY_TOKEN }]
             : payloadsForTerminalPath;
           const evidenceGuardDecision = evaluateEvidenceGuard({
-            prompt: params.prompt,
+            prompt: params.transcriptPrompt ?? params.prompt,
             assistantText: joinEvidenceGuardPayloadText(terminalPayloads),
             retryAttempts: resolveAttemptReplayMetadata(attempt).hadPotentialSideEffects
               ? 1
@@ -3155,6 +3159,16 @@ export async function runEmbeddedPiAgent(
                 `reason=${evidenceGuardDecision.reason}`,
             );
             continue;
+          }
+          if (evidenceGuardDecision.action === "annotate") {
+            terminalPayloads = appendEvidenceGuardAnnotation(
+              terminalPayloads,
+              evidenceGuardDecision.text,
+            );
+            log.warn(
+              `evidence guard annotated final reply: runId=${params.runId} sessionId=${params.sessionId} ` +
+                `kind=${evidenceGuardDecision.kind} reason=${evidenceGuardDecision.reason}`,
+            );
           }
           if (evidenceGuardDecision.action === "fallback") {
             const guardReplayInvalid = resolveReplayInvalidForAttempt(evidenceGuardDecision.text);

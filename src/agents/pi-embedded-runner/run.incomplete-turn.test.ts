@@ -108,6 +108,41 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(decision).toEqual({ action: "pass" });
   });
 
+  it("accepts current image/report material as evidence for reading values", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt:
+        "[media attached: media://inbound/bone-density.jpg (image/jpeg) | media://inbound/bone-density.jpg]\n这个是多少t值",
+      assistantText: "主要 T 值是腰椎 -4.3，股骨颈 -2.6，股骨整体 -2.4。",
+      attempt: {},
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
+  it("does not treat unrelated attached media as source evidence for external rules", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt:
+        "[media attached: media://inbound/photo.jpg (image/jpeg) | media://inbound/photo.jpg]\n共青森林公园可以自己带车骑行吗",
+      assistantText: "共青森林公园允许游客自带自行车入园。",
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "unsupported_mutable_fact",
+    });
+  });
+
+  it("does not treat ordinary vision-check guidance as a source-required lookup", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "我只是想查一下视力",
+      assistantText: "那就挂普通眼科。一般可以做视力检查、电脑验光，孩子需要时再做散瞳验光。",
+      attempt: {},
+    });
+
+    expect(decision).toEqual({ action: "pass" });
+  });
+
   it("retries venue-rule answers that defer source lookup", () => {
     const decision = evaluateEvidenceGuard({
       prompt: "共青森林公园可以自己带车骑行吗",
@@ -144,6 +179,34 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
       action: "revise",
       kind: "unsupported_mutable_fact",
     });
+  });
+
+  it("retries drug-use advice without current material or source evidence", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "地舒单抗可以用吗",
+      assistantText: "地舒单抗可以用，60mg 半年一次，适合重度骨质疏松。",
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "revise",
+      kind: "unsupported_mutable_fact",
+    });
+  });
+
+  it("annotates repeated unsupported mutable facts instead of replacing the answer", () => {
+    const decision = evaluateEvidenceGuard({
+      prompt: "共青森林公园可以自己带车骑行吗",
+      assistantText: "共青森林公园允许游客自带自行车入园。",
+      retryAttempts: 1,
+      attempt: {},
+    });
+
+    expect(decision).toMatchObject({
+      action: "annotate",
+      kind: "unsupported_mutable_fact",
+    });
+    expect(decision).toHaveProperty("text", expect.stringContaining("来源/置信度"));
   });
 
   it("does not treat generic web search as map evidence for location claims", () => {
@@ -272,7 +335,7 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     ]);
   });
 
-  it("falls back after a repeated unsupported location claim", async () => {
+  it("annotates after a repeated unsupported location claim", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedBuildEmbeddedRunPayloads.mockImplementation(({ assistantTexts }) =>
       assistantTexts.map((text) => ({ text })),
@@ -307,17 +370,54 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(result.payloads).toEqual([
       {
         text: [
-          "这条还没查证完成；当前没有地图依据可以支撑地点、路线、距离或耗时说法。",
+          "滴水湖车程 30 分钟，适合周末骑行。",
           "",
-          "当前状态：没有匹配当前地点的地图、地理编码或路线工具结果。",
-          "缺少：地图 POI、路线、距离或耗时结果。",
-          "下一步：先调用地图/路线工具，再基于结果回答；工具没有结果就明确说查不到。",
+          "来源/置信度：上面的地点、距离、耗时或远近排序没有匹配的地图/路线结果支撑，请按未核验参考处理，准确出行以地图为准。",
         ].join("\n"),
-        isError: true,
       },
     ]);
-    expect(result.meta.livenessState).toBe("blocked");
-    expectWarnMessageWith("evidence guard blocked final reply");
+    expect(result.meta.livenessState).not.toBe("blocked");
+    expectWarnMessageWith("evidence guard annotated final reply");
+  });
+
+  it("uses transcript prompt for evidence guard so media runtime hints do not trigger source rules", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedBuildEmbeddedRunPayloads.mockImplementation(({ assistantTexts }) =>
+      assistantTexts.map((text) => ({ text })),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValue(
+      makeAttemptResult({
+        assistantTexts: ["主要 T 值是腰椎 -4.3，股骨颈 -2.6。"],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [
+            {
+              type: "text",
+              text: "主要 T 值是腰椎 -4.3，股骨颈 -2.6。",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      prompt:
+        "[media attached: media://inbound/bone-density.jpg (image/jpeg)]\nTo send an image back, prefer the message tool. Both absolute paths and workspace-relative paths work when they stay inside your allowed file-read boundary.\n这个是多少t值",
+      transcriptPrompt:
+        "[media attached: media://inbound/bone-density.jpg (image/jpeg)]\n这个是多少t值",
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-evidence-guard-transcript-prompt",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(result.payloads).toEqual([{ text: "主要 T 值是腰椎 -4.3，股骨颈 -2.6。" }]);
+    expectNoWarnMessageWith("evidence guard requested revision");
+    expectNoWarnMessageWith("evidence guard annotated final reply");
   });
 
   it("emits the before_agent_run hook block message as the agent payload", async () => {
