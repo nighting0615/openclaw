@@ -1,6 +1,7 @@
 import { tryDispatchAcpReplyHook } from "openclaw/plugin-sdk/acp-runtime-backend";
 import { createAcpxRuntimeService } from "./register.runtime.js";
 import type { OpenClawPluginApi } from "./runtime-api.js";
+import { handleCheckCommand } from "./src/check-command.js";
 import { handleDiaryCommand, handleHabitCommand } from "./src/diary-command.js";
 import { handleExcerptCommand } from "./src/excerpt-command.js";
 import { handleTaskCommand } from "./src/task-command.js";
@@ -21,6 +22,13 @@ const plugin = {
       acceptsArgs: true,
       requireAuth: true,
       handler: handleTaskCommand,
+    });
+    api.registerCommand({
+      name: "raycheck",
+      description: "Manage PaperS3 checklists without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      handler: handleCheckCommand,
     });
     api.registerCommand({
       name: "excerpt",

@@ -10,6 +10,7 @@ const {
   handleExcerptCommandMock,
   handleDiaryCommandMock,
   handleHabitCommandMock,
+  handleCheckCommandMock,
 } = vi.hoisted(() => ({
   createAcpxRuntimeServiceMock: vi.fn(),
   tryDispatchAcpReplyHookMock: vi.fn(),
@@ -17,6 +18,7 @@ const {
   handleExcerptCommandMock: vi.fn(),
   handleDiaryCommandMock: vi.fn(),
   handleHabitCommandMock: vi.fn(),
+  handleCheckCommandMock: vi.fn(),
 }));
 
 vi.mock("./register.runtime.js", () => ({
@@ -29,6 +31,10 @@ vi.mock("openclaw/plugin-sdk/acp-runtime-backend", () => ({
 
 vi.mock("./src/task-command.js", () => ({
   handleTaskCommand: handleTaskCommandMock,
+}));
+
+vi.mock("./src/check-command.js", () => ({
+  handleCheckCommand: handleCheckCommandMock,
 }));
 
 vi.mock("./src/excerpt-command.js", () => ({
@@ -88,6 +94,13 @@ describe("acpx plugin", () => {
       acceptsArgs: true,
       requireAuth: true,
       handler: handleTaskCommandMock,
+    });
+    expect(api.registerCommand).toHaveBeenCalledWith({
+      name: "raycheck",
+      description: "Manage PaperS3 checklists without model routing",
+      acceptsArgs: true,
+      requireAuth: true,
+      handler: handleCheckCommandMock,
     });
     expect(api.registerCommand).toHaveBeenCalledWith({
       name: "excerpt",
